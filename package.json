@@ -10,15 +10,12 @@
   },
   "dependencies": {
     "@prisma/client": "^7.10.0",
-    "jsonwebtoken": "^9.0.3",
     "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/bcryptjs": "^2.4.6",
-    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",

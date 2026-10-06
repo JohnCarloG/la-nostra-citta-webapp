@@ -1,0 +1,331 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Quartiere {
+  id     String   @id @default(uuid()) @db.Uuid
+  nome   String   @unique
+  utenti Utente[]
+}
+
+enum RuoloUtente {
+  CITTADINO
+  COMITATO
+}
+
+enum StatoAccount {
+  ATTIVO
+  SOSPESO
+}
+
+model Utente {
+  id                 String       @id @default(uuid()) @db.Uuid
+  nome               String
+  cognome            String
+  email_normalizzata String       @unique
+  password_hash      String
+  verificato_il      DateTime?
+  ruolo              RuoloUtente  @default(CITTADINO)
+  stato_account      StatoAccount @default(ATTIVO)
+  quartiere_id       String?      @db.Uuid
+  creato_il          DateTime     @default(now())
+
+  quartiere         Quartiere?             @relation(fields: [quartiere_id], references: [id], onDelete: Restrict)
+  segnalazioni      Segnalazione[]
+  sostegni          Sostegno[]
+  eventi_stato      EventoStato[]
+  audit             AuditEvento[]
+  upload_temporanei UploadTemporaneo[]
+  token_account     TokenAccount[]
+  sessioni          Sessione[]
+  richieste_idem    RichiestaIdempotente[]
+}
+
+enum StatoAvanzamento {
+  RICEVUTA
+  PRESA_IN_CARICO
+  INVIATA_AI_CANDIDATI
+  RITIRATA
+}
+
+enum StatoModerazione {
+  PENDENTE
+  IN_REVISIONE
+  APPROVATA
+  RIFIUTATA
+}
+
+enum OriginePosizione {
+  MANUALE
+  EXIF_CONFERMATO
+}
+
+model Segnalazione {
+  id                String           @id @default(uuid()) @db.Uuid
+  autore_id         String           @db.Uuid
+  descrizione       String
+  latitudine        Float
+  longitudine       Float
+  origine_posizione OriginePosizione
+  stato_avanzamento StatoAvanzamento @default(RICEVUTA)
+  stato_moderazione StatoModerazione @default(PENDENTE)
+  revisione         Int              @default(1)
+  creata_il         DateTime         @default(now())
+  aggiornata_il     DateTime         @updatedAt
+
+  autore         Utente                  @relation(fields: [autore_id], references: [id], onDelete: Restrict)
+  media          Media[]
+  sostegni       Sostegno[]
+  categorie      SegnalazioneCategoria[]
+  eventi_stato   EventoStato[]
+  audit          AuditEvento[]
+  analisi_ia     AnalisiIa[]
+  outbox         Outbox[]
+  richieste_idem RichiestaIdempotente[]
+
+  @@index([stato_moderazione, stato_avanzamento, creata_il, id])
+}
+
+enum TipoMedia {
+  FOTO
+  VIDEO
+}
+
+enum StatoFile {
+  READY
+  QUARANTENA
+  ERRORE
+}
+
+model Media {
+  id              String    @id @default(uuid()) @db.Uuid
+  segnalazione_id String    @db.Uuid
+  storage_key     String    @unique
+  tipo            TipoMedia
+  mime            String
+  byte_size       Int
+  durata_secondi  Int?
+  sha256          String
+  stato_file      StatoFile @default(READY)
+  exif_lat        Float?
+  exif_lon        Float?
+  derivato_key    String?   @unique
+  creato_il       DateTime  @default(now())
+
+  segnalazione Segnalazione @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
+  analisi_ia   AnalisiIa[]
+}
+
+model Sostegno {
+  utente_id       String   @db.Uuid
+  segnalazione_id String   @db.Uuid
+  creato_il       DateTime @default(now())
+
+  utente       Utente       @relation(fields: [utente_id], references: [id], onDelete: Restrict)
+  segnalazione Segnalazione @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
+
+  @@id([utente_id, segnalazione_id])
+  @@index([segnalazione_id])
+}
+
+model Categoria {
+  id     String  @id @default(uuid()) @db.Uuid
+  codice String  @unique
+  nome   String
+  attiva Boolean @default(true)
+
+  segnalazioni SegnalazioneCategoria[]
+  suggerimenti SuggerimentoCategoria[]
+}
+
+model SegnalazioneCategoria {
+  segnalazione_id String @db.Uuid
+  categoria_id    String @db.Uuid
+
+  segnalazione Segnalazione @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
+  categoria    Categoria    @relation(fields: [categoria_id], references: [id], onDelete: Restrict)
+
+  @@id([segnalazione_id, categoria_id])
+}
+
+enum TipoAttore {
+  UTENTE
+  SISTEMA
+}
+
+enum AmbitoEvento {
+  AVANZAMENTO
+  MODERAZIONE
+}
+
+model EventoStato {
+  id              String       @id @default(uuid()) @db.Uuid
+  segnalazione_id String       @db.Uuid
+  attore_id       String?      @db.Uuid
+  tipo_attore     TipoAttore
+  ambito          AmbitoEvento
+  da_stato        String?
+  a_stato         String
+  motivazione     String
+  revisione       Int
+  creato_il       DateTime     @default(now())
+
+  segnalazione Segnalazione @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
+  attore       Utente?      @relation(fields: [attore_id], references: [id], onDelete: Restrict)
+
+  @@index([segnalazione_id, creato_il, id])
+}
+
+model AuditEvento {
+  id              String     @id @default(uuid()) @db.Uuid
+  attore_id       String?    @db.Uuid
+  tipo_attore     TipoAttore
+  segnalazione_id String?    @db.Uuid
+  azione          String
+  request_id      String?
+  dati_json       String?
+  creato_il       DateTime   @default(now())
+
+  attore       Utente?       @relation(fields: [attore_id], references: [id], onDelete: Restrict)
+  segnalazione Segnalazione? @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
+}
+
+enum ModuloIA {
+  MODERAZIONE
+  CLASSIFICAZIONE
+  EXIF
+  COERENZA
+}
+
+enum StatoEsecuzione {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  OBSOLETE
+}
+
+model AnalisiIa {
+  id               String          @id @default(uuid()) @db.Uuid
+  segnalazione_id  String          @db.Uuid
+  media_id         String?         @db.Uuid
+  revisione        Int
+  modulo           ModuloIA
+  versione_modello String
+  versione_policy  String
+  input_hash       String
+  stato_esecuzione StatoEsecuzione @default(QUEUED)
+  esito            String?
+  punteggio        Float?
+  dettagli_json    String?
+  tentativi        Int             @default(0)
+  creata_il        DateTime        @default(now())
+  completata_il    DateTime?
+
+  segnalazione Segnalazione            @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
+  media        Media?                  @relation(fields: [media_id], references: [id], onDelete: Restrict)
+  suggerimenti SuggerimentoCategoria[]
+
+  @@unique([segnalazione_id, revisione, modulo, input_hash, versione_modello, versione_policy], name: "chiave_idempotenza")
+  @@index([stato_esecuzione, creata_il])
+}
+
+model SuggerimentoCategoria {
+  analisi_id   String @db.Uuid
+  categoria_id String @db.Uuid
+  confidenza   Float?
+
+  analisi   AnalisiIa @relation(fields: [analisi_id], references: [id], onDelete: Restrict)
+  categoria Categoria @relation(fields: [categoria_id], references: [id], onDelete: Restrict)
+
+  @@id([analisi_id, categoria_id])
+}
+
+enum StatoUpload {
+  IN_CARICAMENTO
+  VALIDO
+  SCARTATO
+  CONSUMATO
+}
+
+model UploadTemporaneo {
+  id              String      @id @default(uuid()) @db.Uuid
+  proprietario_id String      @db.Uuid
+  storage_key     String      @unique
+  tipo            TipoMedia
+  mime            String
+  byte_size       Int
+  sha256          String
+  durata_secondi  Int?
+  exif_lat        Float?
+  exif_lon        Float?
+  stato           StatoUpload @default(IN_CARICAMENTO)
+  scade_il        DateTime
+  consumato_il    DateTime?
+
+  proprietario Utente @relation(fields: [proprietario_id], references: [id], onDelete: Restrict)
+}
+
+enum TipoToken {
+  VERIFICA_EMAIL
+  RESET_PASSWORD
+}
+
+model TokenAccount {
+  id         String    @id @default(uuid()) @db.Uuid
+  utente_id  String    @db.Uuid
+  tipo       TipoToken
+  token_hash String    @unique
+  scade_il   DateTime
+  usato_il   DateTime?
+  creato_il  DateTime  @default(now())
+
+  utente Utente @relation(fields: [utente_id], references: [id], onDelete: Restrict)
+}
+
+model Sessione {
+  id          String    @id @default(uuid()) @db.Uuid
+  utente_id   String    @db.Uuid
+  token_hash  String    @unique
+  scade_il    DateTime
+  revocata_il DateTime?
+  creato_il   DateTime  @default(now())
+
+  utente Utente @relation(fields: [utente_id], references: [id], onDelete: Restrict)
+}
+
+model Outbox {
+  id                    String    @id @default(uuid()) @db.Uuid
+  segnalazione_id       String    @db.Uuid
+  revisione             Int
+  tipo_evento           String
+  payload_json          String
+  creata_il             DateTime  @default(now())
+  elaborata_il          DateTime?
+  tentativi             Int       @default(0)
+  prossimo_tentativo_il DateTime?
+
+  segnalazione Segnalazione @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
+
+  @@unique([segnalazione_id, revisione, tipo_evento])
+  @@index([elaborata_il, prossimo_tentativo_il])
+}
+
+model RichiestaIdempotente {
+  utente_id       String   @db.Uuid
+  chiave          String
+  payload_hash    String
+  segnalazione_id String?  @db.Uuid
+  stato           String
+  scade_il        DateTime
+
+  utente       Utente        @relation(fields: [utente_id], references: [id], onDelete: Restrict)
+  segnalazione Segnalazione? @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
+
+  @@id([utente_id, chiave])
+}

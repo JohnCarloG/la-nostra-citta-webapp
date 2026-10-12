@@ -29,6 +29,17 @@ describe('DevelopmentEmailTransport (In-Memory)', () => {
     expect(token).toBeUndefined();
   });
 
+  it('Genera i link corretti per verifica e reset su localhost:3001', async () => {
+    await emailTransport.sendEmail('mario@example.com', 'Verifica Account', 'Testo', 'tok-ver-123');
+    await emailTransport.sendEmail('mario@example.com', 'Reset Password', 'Testo', 'tok-res-456');
+
+    const msgVerifica = emailTransport.getMessages()[0];
+    const msgReset = emailTransport.getMessages()[1];
+
+    expect(msgVerifica.link).toBe('http://localhost:3001/verify?token=tok-ver-123');
+    expect(msgReset.link).toBe('http://localhost:3001/reset-password/confirm?token=tok-res-456');
+  });
+
   it('Cancella la cronologia con clear()', async () => {
     await emailTransport.sendEmail('test@example.com', 'Oggetto', 'Messaggio');
     expect(emailTransport.getMessages()).toHaveLength(1);

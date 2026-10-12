@@ -32,7 +32,6 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-!.env.example
 
 # vercel
 .vercel
@@ -45,4 +44,9 @@ next-env.d.ts
 _backup_corrente/
 _v9_baseline/
 *.zip
+.test-mailbox.json
+.latest-verification-link.txt
+.private_storage/
+.test_storage/
+.orphaned_storage_keys.json
 

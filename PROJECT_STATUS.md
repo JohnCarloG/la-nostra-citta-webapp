@@ -2,7 +2,7 @@
 
 **Progetto**: La Nostra Città, Il Nostro Futuro  
 **Target Autorizzato**: Next.js (App Router) + Prisma ORM (5.22.0) + MySQL su Aiven  
-**Stato Globale**: Fase 2 Completata e Collaudata su Aiven MySQL (`la_nostra_citta_test`). 46/46 Unit Test passati, 13/13 Test di Integrazione DB superati su Aiven (eseguiti 2 volte con successo deterministico e idempotente), 12/12 Step E2E Auth completati su Aiven, Build Produzione con 8 Route pronta. Fase 3 rigorosamente sospesa.
+**Stato Globale**: Fase 2 Completata e Collaudata su Aiven MySQL (`la_nostra_citta_test`). **62/62 Unit Test passati**, **21/21 Test di Integrazione DB superati** su Aiven (eseguiti con successo deterministico e idempotente), 12/12 Step E2E Auth completati su Aiven, Build Produzione con 8 Route pronta. **Fase 3 — Storage Locale Implementata**: endpoint upload dedicato `POST /api/uploads`, validazione strutturale MIME, ciclo di vita UploadTemporaneo con tracciamento orfani. Collaudo manuale upload **NON ESEGUITO** (rinviato). Moderazione IA **SOSPESA**.
 
 ---
 
@@ -52,16 +52,26 @@
 1. **Rimozione Media / Ultimo Media**: la cancellazione dei singoli file o dell'ultimo media da segnalazioni pubblicate è **non implementata** a livello di dominio per impedire la rimozione indebita di prove probatorie.
 2. **Vincolo "Almeno un Media"**: garantito esclusivamente dai percorsi applicativi (`createSegnalazioneAtomica`), non da un vincolo a livello di schema MySQL (dove una scrittura diretta su tabella potrebbe creare segnalazioni senza media).
 3. **Worker Asincrono di Retry**: nessun worker di retry o demone background è attivo; i campi `tentativi` e `prossimo_tentativo_il` sono predisposizioni di schema.
-4. **Fase 3 (Upload S3 e Moderazione IA)**: rigorosamente **SOSPESA** fino all'approvazione del collaudo completato della Fase 2.
+4. **Fase 3 (Upload Fisico consolidato / Moderazione IA sospesa)**:
+   - **Storage Locale Privato**: **IMPLEMENTATO** con `LocalDiskStorageProvider` su directory privata `.private_storage/`.
+   - **Predisposizione S3**: **SOLTANTO PREDISPOSTO** tramite l'interfaccia `StorageProvider`. Nessun adapter AWS S3 è implementato. Le variabili d'ambiente non sono sufficienti per attivarlo e la richiesta esplicita di un provider non implementato solleva eccezione senza fallback locale silenzioso.
+   - **Endpoint Upload Dedicato**: implementato via `POST /api/uploads` (max 10 MiB foto / 50 MiB video) per non espandere indiscriminatamente il limite di body delle Server Action del resto dell'app (mantenute a 1 MiB).
+   - **Validazione Strutturale**: controllo decodificabilità e chunk/segmenti (JPEG SOI/SOF/EOI, PNG IHDR/IDAT/IEND, WebP RIFF/VP8, MP4 ftyp+moov/mdat) con limiti di risorse anti-DoS. EXIF malformato gestito senza crash; coordinate EXIF trattate come non probatorie.
+   - **Ciclo di Vita, Tracciamento Orfani e Pulizia**: registrazione persistente degli orfani in `.orphaned_storage_keys.json` in caso di doppia anomalia (DB fail + delete storage fail). Pulizia (`pulisciUploadTemporaneiScaduti`) protetta da concorrenza, che preserva i file `CONSUMATO` e referenziati da `Media`. Invocata manualmente da comando (`npm run cleanup:uploads`) o schedulatore OS, non da demone interno.
+   - **Moderazione Asincrona IA**: rigorosamente **SOSPESA**.
 
 ---
 
 ## Stato Verifiche e Collaudo
-- **Unit Test (Vitest)**: **46/46 test superati** (13 auth, 14 segnalazioni, 5 rate-limiter, 4 email-transport, 10 guardie di sicurezza DB).
-- **Integrazione DB Aiven (MySQL live)**: **13/13 test superati (eseguito 2 volte consecutivamente)** su `la_nostra_citta_test` (6 auth-db, 7 segnalazioni-db). Idempotenza e isolamento transazionale convalidati; migrazione da zero su DB vuoto non verificata (eseguito recupero parziale DDL).
-- **Flusso Completo di Dominio (Script E2E su DB Aiven)**: **12/12 step superati** (`npm run test:e2e:auth`). Convalida la sequenza di funzioni di dominio, non ogni possibile condizione di concorrenza.
-- **Collaudo Browser / UI**: **NON ESEGUITO** (driver Playwright non disponibili in locale). Compilazione e correzione form di conferma verifica applicate; checklist manuale dettagliata documentata in [VERIFICATION.md](file:///c:/Users/net/Desktop/la-nostra-citta-webapp/VERIFICATION.md).
+- **Unit Test (Vitest)**: **62/62 test superati** (14 auth, 14 segnalazioni, 10 guardie di sicurezza DB, 5 rate-limiter, 5 email-transport, 11 mime-validator strutturale, 3 storage-provider).
+- **Integrazione DB Aiven (MySQL live)**: **21/21 test superati** su `la_nostra_citta_test` (6 auth-db, 7 segnalazioni-db, 8 uploads-db con test proprietà/isolamento/pulizia senza svuotamento globale DB).
+- **Flusso Completo di Dominio (Script E2E su DB Aiven)**: **12/12 step superati** (`npm run test:e2e:auth`).
+- **Collaudo Browser / UI**:
+  - Registrazione, blocco pre-verifica, verifica email senza consumo su GET, conferma form, login, attributi cookie di sessione e logout: **SUPERATI** dall'operatore.
+  - Reset password nel browser: **NON ESEGUITO** (dichiarato esplicitamente per scelta dell'operatore; coperto a livello di dominio ed E2E script).
+  - Form Nuova Segnalazione con Upload fisico e invio atomico: predisposto e servito su localhost:3001 via endpoint `/api/uploads`.
 - **TypeScript**: **0 errori** (`tsc --noEmit`).
 - **ESLint**: **0 errori e 0 warning** (`npm run lint`).
-- **Build Next.js**: **8 route di produzione ottimizzate** completate con successo (`npm run build`).
+- **Build Next.js**: produzione ottimizzata completata con successo (`npm run build`).
 - **Prisma Schema**: valido per provider `mysql`.
+

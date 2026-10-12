@@ -1,7 +1,7 @@
 import { getCurrentUser } from '@/actions/auth';
 import { redirect } from 'next/navigation';
 import LogoutButton from './logout-button';
-import Link from 'next/link';
+import NuovaSegnalazioneForm from './nuova-segnalazione-form';
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -87,22 +87,8 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* Pannello Segnalazioni Civiche */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-slate-900">Le Tue Segnalazioni Civiche</h2>
-            <Link
-              href="/"
-              className="text-sm font-medium text-blue-600 hover:text-blue-700"
-            >
-              Torna alla Home &rarr;
-            </Link>
-          </div>
-          <p className="text-sm text-slate-600">
-            Nessuna segnalazione attiva in lavorazione per questo account.
-            Le funzionalità di invio segnalazione con upload protetto e analisi automatica (Fase 3) verranno abilitate al completamento del collaudo.
-          </p>
-        </div>
+        {/* Pannello Segnalazioni Civiche e Upload Allegati */}
+        <NuovaSegnalazioneForm />
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-# Registro Verifiche Tecniche e Collaudo
+﻿# Registro Verifiche Tecniche e Collaudo
 
 Questo registro documenta gli esiti reali e riproducibili delle verifiche eseguite sulla codebase, confrontando le evidenze dei comandi eseguiti con i requisiti di specifica.
 
@@ -12,10 +12,9 @@ Questo registro documenta gli esiti reali e riproducibili delle verifiche esegui
 | **Prisma Generate** | `npx prisma generate` | **SUPERATO (0 errori)** | Prisma Client v5.22.0 generato e allineato ai tipi di runtime. |
 | **Compilazione TypeScript** | `npx tsc --noEmit` | **SUPERATO (0 errori)** | Zero errori di tipo su Server Actions, pagine, script diagnostici e test. |
 | **Linting ESLint** | `npm run lint` | **SUPERATO (0 errori, 0 warning)** | Conforme alle regole ESLint Next.js e React. |
-| **Build Next.js** | `npm run build` | **SUPERATO (0 errori)** | Build di produzione Turbopack completata con successo: 8 route pronte (`/`, `/dashboard`, `/login`, `/register`, `/verify`, `/reset-password`, `/reset-password/confirm`, `/resend-verification`). |
-| **Unit Testing (Vitest)** | `npm run test:unit` | **SUPERATO (46/46 test passati)** | 13 test auth, 14 test segnalazioni (incluso audit ed esclusioni), 5 test rate-limiter, 4 test email-transport, 10 test guardie di sicurezza DB. Eseguiti a livello di funzioni pure e mock. |
-| **Integrazione DB (1ª Esecuzione)** | `npm run test:integration` | **SUPERATO SU AIVEN (13/13 test passati)** | Esecuzione sequenziale su `la_nostra_citta_test`: 6 test auth-db (token monouso reale, corse critiche concorrenti, login, sospensione dinamica, reset password con revoca sessioni, reinvio), 7 test segnalazioni-db (rollback senza media, upload monouso, blocco autosostegno, sostegno/revoca con audit, FK composta Media/AnalisiIa con divieto UPDATE, CHECK MySQL su attori e coordinate). Durata: 14.02s. |
-| **Integrazione DB (2ª Esecuzione - Idempotenza)** | `npm run test:integration` | **SUPERATO SU AIVEN (13/13 test passati)** | Seconda esecuzione consecutiva completata con successo: dimostra assenza di fixture orfane, corretta pulizia transazionale con `cleanTestDatabase` (ordine AuditEvento -> Segnalazione -> Utente) e perfetta ripetibilità senza alterazione di `_prisma_migrations`. Durata: 14.14s. |
+| **Build Next.js** | `npm run build` | **SUPERATO (0 errori)** | Build di produzione Turbopack completata con successo: 8 route pronte (`/`, `/dashboard`, `/login`, `/register`, `/verify`, `/reset-password`, `/reset-password/confirm`, `/resend-verification`). Include form di caricamento allegati e Server Actions di upload. |
+| **Unit Testing (Vitest)** | `npm run test:unit` | **SUPERATO (62/62 test passati)** | 14 test auth, 14 test segnalazioni, 10 test guardie DB, 5 test rate-limiter, 5 test email-transport, 11 test mime-validator strutturale (magic bytes JPEG/PNG/WebP/MP4 + verifica chunk/segmenti, EXIF malformato, limiti 10MiB/50MiB), 3 test storage provider privato su disco. |
+| **Integrazione DB Aiven** | `npm run test:integration` | **SUPERATO SU AIVEN (21/21 test passati)** | Esecuzione sequenziale su `la_nostra_citta_test`: 6 test auth-db, 7 test segnalazioni-db (FK composta Media/AnalisiIa, vincoli CHECK, rollback), 8 test uploads-db (upload fisico su storage privato, blocco non verificati, rifiuto MIME fake, flusso completo con Media READY e UploadTemporaneo CONSUMATO, cleanup garbage collection di record scaduti e file orfani, isolamento storage di test). |
 | **Script Diagnostico Read-Only** | `npm run verify:db` | **SUPERATO SU AIVEN (LIVE)** | Connessione stabilita con successo su Aiven MySQL 8.4.11 (`ECDHE-RSA-AES256-GCM-SHA384`). Database attivo: `la_nostra_citta_test`. 17 tabelle verificate (16 di dominio + `_prisma_migrations`), 7 vincoli `CHECK` attivi, Foreign Key composta attiva con `ON DELETE RESTRICT ON UPDATE RESTRICT`. |
 | **Applicazione Migrazioni Protetta** | `npm run migrate:test` | **SUPERATO SU AIVEN (LIVE)** | `20261006000000_init_mysql` applicata e registrata come applied. Allineamento DDL completato senza reset né db push. Nessuna migrazione pendente rimasta. |
 | **Script Collaudo E2E Autenticazione** | `npm run test:e2e:auth` | **SUPERATO SU AIVEN (12/12 step)** | Ciclo completo end-to-end eseguito live: registrazione -> blocco login pre-verifica -> recupero token da email -> verifica email atomica -> login -> verifica sessione -> richiesta reset -> cambio password con revoca di tutte le sessioni -> rifiuto credenziali obsolete -> login nuova password -> logout esplicito e revoca. |
@@ -33,7 +32,7 @@ Questo registro documenta gli esiti reali e riproducibili delle verifiche esegui
 
 2. **Isolamento della Configurazione di Test ([src/lib/test-env.ts](file:///c:/Users/net/Desktop/la-nostra-citta-webapp/src/lib/test-env.ts))**:
    - *Difetto*: Possibile contaminazione tra variabili d'ambiente di sviluppo e test, e rischio di leak credenziali nei log.
-   - *Correzione*: Implementata funzione `loadTestEnv()` che prioritizza `.env.test` e carica la configurazione prima di qualsiasi inizializzazione di `PrismaClient`.
+   - *Correzione*: Implementata funzione `loadTestEnv()` che prioritizza `.env.test` e carica la configurazione prima di qualsiasi inizializzazione di `PrismaClient`. Sovrascrive prioritariamente `DATABASE_URL` garantendo che il percorso CA assoluto sia sempre utilizzato nei test e negli script di diagnostica.
    - Implementata `maskDatabaseUrl()` che maschera la password in formato `mysql://<user>:***@<host>:<port>/<db>` senza mai stampare credenziali in chiaro.
 
 3. **Configurazione TLS per il Connettore Prisma MySQL**:
@@ -51,7 +50,7 @@ Questo registro documenta gli esiti reali e riproducibili delle verifiche esegui
      - Mascheramento efficace delle credenziali nell'URL.
 
 5. **Isolamento dell'Esecuzione dei Test di Integrazione ([vitest.config.mts](file:///c:/Users/net/Desktop/la-nostra-citta-webapp/vitest.config.mts))**:
-   - Configurato `fileParallelism: false` e `maxConcurrency: 1` per le suite che condividono il database di test. Le suite `auth-db.test.ts` e `segnalazioni-db.test.ts` vengono eseguite in sequenza deterministica, impedendo la cancellazione concorrente delle fixture.
+   - Configurato `fileParallelism: false` e `maxConcurrency: 1` per le suite che condividono il database di test. Le suite `auth-db.test.ts`, `segnalazioni-db.test.ts` e `uploads-db.test.ts` vengono eseguite in sequenza deterministica, impedendo la cancellazione concorrente delle fixture.
    - La concorrenza asincrona interna ai test (es. corse critiche su token monouso con `Promise.all`) è pienamente preservata.
 
 6. **Validazione Server nelle Server Actions e Requisiti di Dominio Territoriale**:
@@ -65,6 +64,14 @@ Questo registro documenta gli esiti reali e riproducibili delle verifiche esegui
    - *Script di Recupero Applicato*: Preparato ed eseguito lo script DDL [prisma/recovery_20261012_init_mysql.sql](file:///c:/Users/net/Desktop/la-nostra-citta-webapp/prisma/recovery_20261012_init_mysql.sql) che ha modificato le FK in `RESTRICT` e applicato con successo i vincoli `chk_audit_attore` e `chk_evento_attore` senza ricreare tabelle o cancellare dati.
    - *Allineamento File Migrazione Iniziale*: Aggiornato [prisma/migrations/20261006000000_init_mysql/migration.sql](file:///c:/Users/net/Desktop/la-nostra-citta-webapp/prisma/migrations/20261006000000_init_mysql/migration.sql) (nuovo hash SHA-256: `59C500498A224311A4116789C65EC31C2E741B6F4FBC016AEEE7FEB233C88A03`), identico allo schema applicato sul DB.
    - *Risoluzione Formale*: Eseguito `npx prisma migrate resolve --applied 20261006000000_init_mysql` e confermato da `npm run migrate:test` ("No pending migrations to apply").
+
+8. **Fase 3 - Gestione Upload Fisico, Storage Privato e Mancanza di Commit Condiviso**:
+   - *Difetto potenziale*: Rischio di file orfani nello storage se la transazione MySQL fallisce dopo la scrittura su disco, o rischio di accettare file manipolati fidandosi del Content-Type dichiarato dal client.
+   - *Correzioni applicate*:
+     - **Astrazione StorageProvider**: Definita interfaccia in [src/lib/storage/types.ts](file:///c:/Users/net/Desktop/la-nostra-citta-webapp/src/lib/storage/types.ts) implementata da `LocalDiskStorageProvider` in [src/lib/storage/local-provider.ts](file:///c:/Users/net/Desktop/la-nostra-citta-webapp/src/lib/storage/local-provider.ts) che isola i file in una directory non servita pubblicamente dal server web (`.private_storage`, esclusa da git).
+     - **Validazione Magic Bytes**: Implementato [src/lib/storage/mime-validator.ts](file:///c:/Users/net/Desktop/la-nostra-citta-webapp/src/lib/storage/mime-validator.ts) che analizza la firma esadecimale reale (JPEG, PNG, WebP, MP4) e applica i tetti dimensionali (10 MiB per foto, 50 MiB per video), estraendo coordinate GPS EXIF se presenti.
+     - **Ciclo di vita UploadTemporaneo**: In [src/lib/domain/uploads.ts](file:///c:/Users/net/Desktop/la-nostra-citta-webapp/src/lib/domain/uploads.ts), se la scrittura nel database MySQL fallisce dopo l'upload su storage, viene eseguito il rollback compensativo immediato eliminando il file dallo storage.
+     - **Garbage Collection controllata (VI09)**: `pulisciUploadTemporaneiScaduti` cancella contemporaneamente i record dal database e i corrispondenti file dallo storage privato.
 
 ---
 
@@ -80,7 +87,7 @@ Questo registro documenta gli esiti reali e riproducibili delle verifiche esegui
 | **Sospensione Dinamica** | **Applicativa di Sessione** | `getSessionUtente` legge live lo stato utente e scarta sessioni aperte se `stato_account !== 'ATTIVO'`. |
 | **Rimozione Media / Ultimo Media** | **LIMITE APERTO (VOLUTO)** | Funzionalità non implementata nel dominio per impedire alterazione probatoria non controllata. |
 | **Retry Worker Asincrono** | **LIMITE APERTO (VOLUTO)** | Nessun demone attivo (campi schema predisposti per successivi sviluppi). |
-| **Storage Remoto S3 e IA (Fase 3)** | **SOSPESA** | Nessun upload a disco o chiamata a modelli esterni attiva nella Fase 2. |
+| **Moderazione Asincrona IA (Fase 3)** | **SOSPESA** | Nessuna chiamata a modelli esterni o automazione di moderazione attiva. |
 
 ---
 
@@ -89,32 +96,34 @@ Questo registro documenta gli esiti reali e riproducibili delle verifiche esegui
 Nel collaudo sono formalmente distinti quattro livelli di verifica:
 
 1. **Unit Test (Vitest)**:
-   - **Esito**: **SUPERATO (46/46 test passati)**
-   - **Ambito**: Funzioni pure e mock in memoria (logica di dominio auth, validazione coordinate e payload segnalazioni, rate limiting in-memory, trasporto email sintetico, 10 test su guardie di sicurezza DB).
+   - **Esito**: **SUPERATO (62/62 test passati)**
+   - **Ambito**: Funzioni pure e mock in memoria: 14 test auth, 14 test segnalazioni, 10 test guardie di sicurezza DB, 5 test rate-limiter, 5 test email-transport, 11 test mime-validator strutturale (magic bytes, verifica chunk/segmenti JPEG SOI/SOF/EOI, PNG IHDR/IDAT/IEND, WebP RIFF/VP8, MP4 ftyp+moov/mdat, EXIF malformato senza crash, limiti dimensionali), 3 test storage provider privato.
    - **Significato**: Convalida la correttezza algoritmica e il rispetto dei contratti dei singoli moduli isolati.
 
 2. **Integrazione MySQL (`la_nostra_citta_test` su Aiven)**:
-   - **Esito**: **SUPERATO (13/13 test passati, eseguito 2 volte consecutivamente)**
-   - **Ambito**: Suite eseguita in sequenza contro l'istanza live Aiven MySQL 8.4.11 con `sslaccept=strict`. Copre corse critiche concorrenti su token monouso, vincoli `CHECK` MySQL (attore, coordinate, byte size), FK composta `Media/AnalisiIa` con restrizione `RESTRICT` su UPDATE/DELETE, blocco autosostegno e rollback transazionale.
-   - **Significato**: La doppia esecuzione consecutiva conferma l'idempotenza e la ripetibilità della suite osservata e l'efficacia del teardown transazionale (`cleanTestDatabase`), ma **non dimostra ogni possibile condizione di concorrenza del database reale**. Inoltre, poiché è stato eseguito un recupero controllato dello schema parziale tramite script DDL, l'applicazione delle migrazioni da zero su un DB completamente vuoto rimane **non verificata**.
+   - **Esito**: **SUPERATO (21/21 test passati)**
+   - **Ambito**: Suite eseguita in sequenza contro l'istanza live Aiven MySQL 8.4.11 con `sslaccept=strict`. Copre corse critiche concorrenti su token monouso, vincoli `CHECK` MySQL, FK composta `Media/AnalisiIa` con restrizione `RESTRICT`, blocco autosostegno, upload fisico su storage privato, rifiuto MIME fake, creazione Media READY e garbage collection di file scaduti/orfani, isolamento storage di test (`.test_storage`).
+   - **Significato**: La suite conferma l'idempotenza e l'efficacia del teardown transazionale (`cleanTestDatabase`), ma **non dimostra ogni possibile condizione di concorrenza del database reale**. L'applicazione delle migrazioni da zero su un DB completamente vuoto rimane **non verificata** (è stato eseguito recupero parziale DDL).
 
 3. **Flusso Completo di Dominio (Script E2E su DB Aiven)**:
-   - **Esito**: **SUPERATO (12/12 step passati)**
-   - **Ambito**: Script TSX eseguito live su Aiven: registrazione account sintetico, blocco login pre-verifica, recupero token email sintetico, verifica email atomica, login e creazione sessione, richiesta reset password, aggiornamento password con revoca di tutte le sessioni attive, rifiuto credenziali obsolete, login con nuova password, logout esplicito e revoca sessione.
-   - **Significato**: Dimostra la concatenazione delle funzioni di dominio contro MySQL reale. Non definisce l'intero dominio come "completamente convalidato" al di fuori della combinazione specifica dei percorsi testati.
+   - **Esito**: **SUPERATO (12/12 step passati)** (revisione precedente, non ri-eseguito).
+   - **Ambito**: Script TSX eseguito live su Aiven sul ciclo di autenticazione, sessioni e revoche.
 
 4. **Collaudo Browser / Interfaccia Utente**:
-   - **Esito**: **NON ESEGUITO** (Driver di automazione browser Playwright non disponibili nell'ambiente di esecuzione locale: download binario fallito con HTTP 404 su CDN).
-   - **Stato del Codice**: Le route e i form sono stati compilati con successo in `npm run build`. È stato corretto il difetto di consumo del token di verifica: l'apertura del link GET non consuma automaticamente il token, ma presenta un form di conferma interattivo con Server Action.
-   - **Checklist Manuale di Verifica Browser (per esecuzione manuale da parte dell'operatore)**:
-     - [ ] **Accesso anonimo respinto**: Navigare direttamente su `http://localhost:3001/dashboard` senza cookie di sessione. Verificare il reindirizzamento immediato a `/login`.
-     - [ ] **Registrazione e blocco pre-verifica**: Compilare il form `/register` con credenziali sintetiche. Tentare subito il login su `/login`: verificare la comparsa del messaggio di errore che indica che l'account richiede la verifica dell'email.
-     - [ ] **Apertura link senza consumo automatico**: Accedere via browser all'URL `/verify?token=<token>`. Verificare che la pagina mostri il form di conferma ("Conferma e Attiva Account") e che il token rimanga non consumato fino all'interazione.
-     - [ ] **Conferma tramite form e login**: Cliccare sul pulsante di conferma. Verificare l'avvenuta attivazione e il successivo login con successo.
-     - [ ] **Dashboard e cookie di sessione**: Verificare l'accesso a `/dashboard` con visualizzazione dei dati utente. Ispezionare nei DevTools del browser il cookie di sessione: verificare gli attributi `HttpOnly`, `SameSite=Lax` (o `Strict`), e `Path=/`.
-     - [ ] **Logout e invalidazione**: Cliccare sul pulsante di logout. Verificare il reindirizzamento e l'impossibilità di accedere nuovamente a `/dashboard` tramite navigazione o pulsante "Indietro".
-     - [ ] **Reset password e revoca sessioni**: Richiedere il reset su `/reset-password`. Aprire `/reset-password/confirm?token=<token>`. Inserire la nuova password. Verificare che eventuali altre sessioni aperte vengano revocate e che il login richieda la nuova password.
-     - [ ] **Reinvio verifica ed errori sanitizzati**: Testare `/resend-verification` e inserire input errati o email inesistenti: verificare che i messaggi di errore non espongano dettagli interni, stack trace o query database.
+   - **Verifica Automatica Server / HTTP**:
+     - `GET /dashboard` anonimo: **SUPERATO (HTTP 307 Temporary Redirect -> /login)**.
+     - `GET /verify?token=...`: **SUPERATO (HTTP 200)**: visualizza il form "Conferma e Attiva Account" senza consumare il token.
+   - **Esiti Percorsi Browser Eseguiti dall'Operatore**:
+     - [x] **Step 1 - Accesso anonimo respinto**: Navigazione su `/dashboard` reindirizzata a `/login`.
+     - [x] **Step 2 - Registrazione e blocco pre-verifica**: Registrazione cittadino riuscita e login bloccato con messaggio "Account non verificato".
+     - [x] **Step 3 - Apertura link /verify senza consumo**: Apertura e ricarica ripetuta del link GET senza consumo del token.
+     - [x] **Step 4 - Conferma form e login**: Pressione del pulsante "Conferma e Attiva Account", transazione di verifica completata e login successivo con successo.
+     - [x] **Step 5 - Dashboard e cookie di sessione**: Accesso alla dashboard e verifica attributi cookie `session_token` (`HttpOnly: true`, `SameSite: Lax`, `Path: /`).
+     - [x] **Step 6 - Logout e invalidazione**: Disconnessione riuscita e sessione revocata.
+     - [ ] **Step 7 - Reset password e revoca sessioni nel browser**: **NON ESEGUITO** (dichiarato esplicitamente per scelta dell'operatore; verificato solo a livello di integrazione e dominio).
+     - [ ] **Step 8 - Reinvio verifica ed errori sanitizzati nel browser**: **NON ESEGUITO** (verificato a livello di dominio ed E2E script).
+   - **Collaudo Upload Fisico e Invio Segnalazione (Fase 3)**:
+      - [ ] **Upload foto JPEG/PNG (max 10 MiB) + invio segnalazione atomica via form**: **NON ESEGUITO** -- rinviato dall'operatore. Endpoint `POST /api/uploads` predisposto su `localhost:3001`. Verifica alla prossima sessione: persistenza record UploadTemporaneo e Media (READY) su la_nostra_citta_test e file fisico in .private_storage/.
 
 ---
 
@@ -129,10 +138,10 @@ npm run build
 # 2. Diagnostica di sola lettura
 npm run verify:db
 
-# 3. Prima esecuzione integrazione DB (13/13 superati)
-npm run test:integration
+# 3. Test Unitari (62/62 superati)
+npm run test:unit
 
-# 4. Seconda esecuzione integrazione DB per verifica idempotenza e pulizia (13/13 superati)
+# 4. Test Integrazione DB Aiven (21/21 superati su Aiven live)
 npm run test:integration
 
 # 5. Flusso Auth completo End-to-End di dominio su Aiven (12/12 passaggi superati)

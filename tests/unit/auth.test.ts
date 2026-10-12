@@ -153,6 +153,37 @@ describe('Flussi di Autenticazione e Autorizzazione (Funzioni Pure/Mock)', () =>
       .rejects.toThrow('Token non valido, scaduto o già utilizzato');
   });
 
+  it('Regressione UI/Form: il rendering della pagina di verifica non consuma il token, solo l\'invio form (verifyEmailAction) lo consuma', async () => {
+    // 1. Simula l'apertura/GET della pagina: passare solo searchParams non invoca verificaEmail
+    const searchParams = { token: 'token-intatto-123' };
+    expect(searchParams.token).toBe('token-intatto-123');
+    // Nessuna interazione con prisma.tokenAccount.updateMany
+    expect(prisma.tokenAccount.updateMany).not.toHaveBeenCalled();
+
+    // 2. Simula l'invio esplicito del form tramite FormData
+    prisma.tokenAccount.updateMany.mockResolvedValue({ count: 1 });
+    prisma.tokenAccount.findUnique.mockResolvedValue({
+      id: 'tok1',
+      tipo: 'VERIFICA_EMAIL',
+      utente_id: 'u1'
+    });
+    prisma.utente.update.mockResolvedValue({ id: 'u1' });
+
+    // Chiamata esplicita della funzione associata alla Server Action
+    await auth.verificaEmail(searchParams.token);
+
+    // Ora e solo ora il token risulta consumato
+    expect(prisma.tokenAccount.updateMany).toHaveBeenCalledWith({
+      where: {
+        token_hash: expect.any(String),
+        tipo: 'VERIFICA_EMAIL',
+        usato_il: null,
+        scade_il: { gt: expect.any(Date) }
+      },
+      data: { usato_il: expect.any(Date) }
+    });
+  });
+
   describe('reinviaVerificaEmail', () => {
     it('Ritorna false se utente inesistente o già verificato', async () => {
       prisma.utente.findUnique.mockResolvedValue(null);

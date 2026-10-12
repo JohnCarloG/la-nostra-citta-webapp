@@ -13,7 +13,9 @@
     "test:integration": "vitest run tests/integration",
     "verify:db": "tsx scripts/verify-aiven.ts",
     "migrate:test": "tsx scripts/deploy-migrations.ts",
-    "test:e2e:auth": "tsx scripts/test-auth-e2e.ts"
+    "test:e2e:auth": "tsx scripts/test-auth-e2e.ts",
+    "start:test": "tsx scripts/start-test-server.ts",
+    "cleanup:uploads": "tsx scripts/cleanup-uploads.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

@@ -1,14 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db';
 import { generateSecureToken, hashPassword, verifyPassword, hashToken } from '../security';
-
-const prisma = new PrismaClient();
-
-// In un ambiente reale, questi verrebbero inviati via provider SMTP.
-// Come richiesto dal vincolo, simuliamo l'invio separato.
-async function mockSendEmail(to: string, subject: string, body: string) {
-  // Evitiamo di loggare il token in chiaro in produzione, qui stampiamo solo per dev
-  console.log(`[MOCK EMAIL] To: ${to} | Subject: ${subject} | Body: [SECRET_TOKEN_SENT]`);
-}
+import { emailTransport } from '../email-transport';
 
 /**
  * Normalizza l'email per evitare duplicati logici (es. test@email.com vs TEST@email.com)
@@ -57,9 +49,62 @@ export async function registraCittadino(nome: string, cognome: string, email: st
     return { utente: utenteDb, clearToken: token };
   });
 
-  // Invio email asincrono, fuori dalla transazione DB per non bloccarla
-  await mockSendEmail(utente.utente.email_normalizzata, 'Verifica Account', `Il tuo token di verifica è: ${utente.clearToken}`);
+  // Invio email tramite trasporto di sviluppo/test consultabile
+  await emailTransport.sendEmail(
+    utente.utente.email_normalizzata,
+    'Verifica Account',
+    `Il tuo token di verifica è: ${utente.clearToken}`,
+    utente.clearToken
+  );
   return utente.utente;
+}
+
+/**
+ * Reinvio token di verifica email per account non ancora verificati
+ */
+export async function reinviaVerificaEmail(email: string): Promise<boolean> {
+  const emailNorm = normalizeEmail(email);
+  const utente = await prisma.utente.findUnique({ where: { email_normalizzata: emailNorm } });
+
+  // Se l'utente non esiste, è sospeso o già verificato, non inviamo token ma non esponiamo leak
+  if (!utente || utente.stato_account === 'SOSPESO' || utente.verificato_il !== null) {
+    return false;
+  }
+
+  const { token, hash } = generateSecureToken();
+  const scadenza = new Date();
+  scadenza.setHours(scadenza.getHours() + 24);
+
+  await prisma.$transaction(async (tx) => {
+    // Invalida token di verifica precedenti
+    await tx.tokenAccount.updateMany({
+      where: {
+        utente_id: utente.id,
+        tipo: 'VERIFICA_EMAIL',
+        usato_il: null
+      },
+      data: {
+        usato_il: new Date()
+      }
+    });
+
+    await tx.tokenAccount.create({
+      data: {
+        utente_id: utente.id,
+        tipo: 'VERIFICA_EMAIL',
+        token_hash: hash,
+        scade_il: scadenza
+      }
+    });
+  });
+
+  await emailTransport.sendEmail(
+    utente.email_normalizzata,
+    'Nuovo Token di Verifica Account',
+    `Il tuo nuovo token di verifica è: ${token}`,
+    token
+  );
+  return true;
 }
 
 /**
@@ -121,7 +166,7 @@ export async function login(email: string, passwordInChiaro: string) {
   const scadenza = new Date();
   scadenza.setDate(scadenza.getDate() + 7); // Sessione 7 giorni
 
-  const sessione = await prisma.sessione.create({
+  await prisma.sessione.create({
     data: {
       utente_id: utente.id,
       token_hash: hash,
@@ -167,7 +212,12 @@ export async function richiediResetPassword(email: string) {
   });
 
   // Fuori transazione (essendo solo un insert singolo, l'await sopra va bene)
-  await mockSendEmail(utente.email_normalizzata, 'Reset Password', `Il tuo token di reset è: ${token}`);
+  await emailTransport.sendEmail(
+    utente.email_normalizzata,
+    'Reset Password',
+    `Il tuo token di reset è: ${token}`,
+    token
+  );
 }
 
 /**

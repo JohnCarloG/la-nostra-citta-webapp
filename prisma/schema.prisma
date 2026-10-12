@@ -3,13 +3,13 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
 model Quartiere {
-  id     String   @id @default(uuid()) @db.Uuid
-  nome   String   @unique
+  id     String   @id @default(uuid()) @db.VarChar(36)
+  nome   String   @unique @db.VarChar(191)
   utenti Utente[]
 }
 
@@ -24,15 +24,15 @@ enum StatoAccount {
 }
 
 model Utente {
-  id                 String       @id @default(uuid()) @db.Uuid
-  nome               String
-  cognome            String
-  email_normalizzata String       @unique
-  password_hash      String
+  id                 String       @id @default(uuid()) @db.VarChar(36)
+  nome               String       @db.VarChar(100)
+  cognome            String       @db.VarChar(100)
+  email_normalizzata String       @unique @db.VarChar(191)
+  password_hash      String       @db.VarChar(255)
   verificato_il      DateTime?
   ruolo              RuoloUtente  @default(CITTADINO)
   stato_account      StatoAccount @default(ATTIVO)
-  quartiere_id       String?      @db.Uuid
+  quartiere_id       String?      @db.VarChar(36)
   creato_il          DateTime     @default(now())
 
   quartiere         Quartiere?             @relation(fields: [quartiere_id], references: [id], onDelete: Restrict)
@@ -66,9 +66,9 @@ enum OriginePosizione {
 }
 
 model Segnalazione {
-  id                String           @id @default(uuid()) @db.Uuid
-  autore_id         String           @db.Uuid
-  descrizione       String
+  id                String           @id @default(uuid()) @db.VarChar(36)
+  autore_id         String           @db.VarChar(36)
+  descrizione       String           @db.Text
   latitudine        Float
   longitudine       Float
   origine_posizione OriginePosizione
@@ -103,27 +103,30 @@ enum StatoFile {
 }
 
 model Media {
-  id              String    @id @default(uuid()) @db.Uuid
-  segnalazione_id String    @db.Uuid
-  storage_key     String    @unique
+  id              String    @id @default(uuid()) @db.VarChar(36)
+  segnalazione_id String    @db.VarChar(36)
+  storage_key     String    @unique @db.VarChar(191)
   tipo            TipoMedia
-  mime            String
+  mime            String    @db.VarChar(100)
   byte_size       Int
   durata_secondi  Int?
-  sha256          String
+  sha256          String    @db.VarChar(64)
   stato_file      StatoFile @default(READY)
   exif_lat        Float?
   exif_lon        Float?
-  derivato_key    String?   @unique
+  derivato_key    String?   @unique @db.VarChar(191)
   creato_il       DateTime  @default(now())
 
   segnalazione Segnalazione @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
   analisi_ia   AnalisiIa[]
+
+  @@unique([id, segnalazione_id])
+  @@index([segnalazione_id])
 }
 
 model Sostegno {
-  utente_id       String   @db.Uuid
-  segnalazione_id String   @db.Uuid
+  utente_id       String   @db.VarChar(36)
+  segnalazione_id String   @db.VarChar(36)
   creato_il       DateTime @default(now())
 
   utente       Utente       @relation(fields: [utente_id], references: [id], onDelete: Restrict)
@@ -134,9 +137,9 @@ model Sostegno {
 }
 
 model Categoria {
-  id     String  @id @default(uuid()) @db.Uuid
-  codice String  @unique
-  nome   String
+  id     String  @id @default(uuid()) @db.VarChar(36)
+  codice String  @unique @db.VarChar(191)
+  nome   String  @db.VarChar(100)
   attiva Boolean @default(true)
 
   segnalazioni SegnalazioneCategoria[]
@@ -144,8 +147,8 @@ model Categoria {
 }
 
 model SegnalazioneCategoria {
-  segnalazione_id String @db.Uuid
-  categoria_id    String @db.Uuid
+  segnalazione_id String @db.VarChar(36)
+  categoria_id    String @db.VarChar(36)
 
   segnalazione Segnalazione @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
   categoria    Categoria    @relation(fields: [categoria_id], references: [id], onDelete: Restrict)
@@ -164,35 +167,35 @@ enum AmbitoEvento {
 }
 
 model EventoStato {
-  id              String       @id @default(uuid()) @db.Uuid
-  segnalazione_id String       @db.Uuid
-  attore_id       String?      @db.Uuid
+  id              String       @id @default(uuid()) @db.VarChar(36)
+  segnalazione_id String       @db.VarChar(36)
+  attore_id       String?      @db.VarChar(36)
   tipo_attore     TipoAttore
   ambito          AmbitoEvento
-  da_stato        String?
-  a_stato         String
-  motivazione     String
+  da_stato        String?      @db.VarChar(50)
+  a_stato         String       @db.VarChar(50)
+  motivazione     String       @db.Text
   revisione       Int
   creato_il       DateTime     @default(now())
 
-  segnalazione Segnalazione @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
-  attore       Utente?      @relation(fields: [attore_id], references: [id], onDelete: Restrict)
+  segnalazione Segnalazione @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  attore       Utente?      @relation(fields: [attore_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([segnalazione_id, creato_il, id])
 }
 
 model AuditEvento {
-  id              String     @id @default(uuid()) @db.Uuid
-  attore_id       String?    @db.Uuid
+  id              String     @id @default(uuid()) @db.VarChar(36)
+  attore_id       String?    @db.VarChar(36)
   tipo_attore     TipoAttore
-  segnalazione_id String?    @db.Uuid
-  azione          String
-  request_id      String?
-  dati_json       String?
+  segnalazione_id String?    @db.VarChar(36)
+  azione          String     @db.VarChar(100)
+  request_id      String?    @db.VarChar(100)
+  dati_json       String?    @db.Text
   creato_il       DateTime   @default(now())
 
-  attore       Utente?       @relation(fields: [attore_id], references: [id], onDelete: Restrict)
-  segnalazione Segnalazione? @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
+  attore       Utente?       @relation(fields: [attore_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  segnalazione Segnalazione? @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
 }
 
 enum ModuloIA {
@@ -211,24 +214,24 @@ enum StatoEsecuzione {
 }
 
 model AnalisiIa {
-  id               String          @id @default(uuid()) @db.Uuid
-  segnalazione_id  String          @db.Uuid
-  media_id         String?         @db.Uuid
+  id               String          @id @default(uuid()) @db.VarChar(36)
+  segnalazione_id  String          @db.VarChar(36)
+  media_id         String?         @db.VarChar(36)
   revisione        Int
   modulo           ModuloIA
-  versione_modello String
-  versione_policy  String
-  input_hash       String
+  versione_modello String          @db.VarChar(64)
+  versione_policy  String          @db.VarChar(64)
+  input_hash       String          @db.VarChar(64)
   stato_esecuzione StatoEsecuzione @default(QUEUED)
-  esito            String?
+  esito            String?         @db.VarChar(50)
   punteggio        Float?
-  dettagli_json    String?
+  dettagli_json    String?         @db.Text
   tentativi        Int             @default(0)
   creata_il        DateTime        @default(now())
   completata_il    DateTime?
 
-  segnalazione Segnalazione            @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
-  media        Media?                  @relation(fields: [media_id], references: [id], onDelete: Restrict)
+  segnalazione Segnalazione            @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  media        Media?                  @relation(fields: [media_id, segnalazione_id], references: [id, segnalazione_id], onDelete: Restrict, onUpdate: Restrict)
   suggerimenti SuggerimentoCategoria[]
 
   @@unique([segnalazione_id, revisione, modulo, input_hash, versione_modello, versione_policy], name: "chiave_idempotenza")
@@ -236,8 +239,8 @@ model AnalisiIa {
 }
 
 model SuggerimentoCategoria {
-  analisi_id   String @db.Uuid
-  categoria_id String @db.Uuid
+  analisi_id   String @db.VarChar(36)
+  categoria_id String @db.VarChar(36)
   confidenza   Float?
 
   analisi   AnalisiIa @relation(fields: [analisi_id], references: [id], onDelete: Restrict)
@@ -254,13 +257,13 @@ enum StatoUpload {
 }
 
 model UploadTemporaneo {
-  id              String      @id @default(uuid()) @db.Uuid
-  proprietario_id String      @db.Uuid
-  storage_key     String      @unique
+  id              String      @id @default(uuid()) @db.VarChar(36)
+  proprietario_id String      @db.VarChar(36)
+  storage_key     String      @unique @db.VarChar(191)
   tipo            TipoMedia
-  mime            String
+  mime            String      @db.VarChar(100)
   byte_size       Int
-  sha256          String
+  sha256          String      @db.VarChar(64)
   durata_secondi  Int?
   exif_lat        Float?
   exif_lon        Float?
@@ -277,10 +280,10 @@ enum TipoToken {
 }
 
 model TokenAccount {
-  id         String    @id @default(uuid()) @db.Uuid
-  utente_id  String    @db.Uuid
+  id         String    @id @default(uuid()) @db.VarChar(36)
+  utente_id  String    @db.VarChar(36)
   tipo       TipoToken
-  token_hash String    @unique
+  token_hash String    @unique @db.VarChar(64)
   scade_il   DateTime
   usato_il   DateTime?
   creato_il  DateTime  @default(now())
@@ -289,9 +292,9 @@ model TokenAccount {
 }
 
 model Sessione {
-  id          String    @id @default(uuid()) @db.Uuid
-  utente_id   String    @db.Uuid
-  token_hash  String    @unique
+  id          String    @id @default(uuid()) @db.VarChar(36)
+  utente_id   String    @db.VarChar(36)
+  token_hash  String    @unique @db.VarChar(64)
   scade_il    DateTime
   revocata_il DateTime?
   creato_il   DateTime  @default(now())
@@ -300,11 +303,11 @@ model Sessione {
 }
 
 model Outbox {
-  id                    String    @id @default(uuid()) @db.Uuid
-  segnalazione_id       String    @db.Uuid
+  id                    String    @id @default(uuid()) @db.VarChar(36)
+  segnalazione_id       String    @db.VarChar(36)
   revisione             Int
-  tipo_evento           String
-  payload_json          String
+  tipo_evento           String    @db.VarChar(100)
+  payload_json          String    @db.Text
   creata_il             DateTime  @default(now())
   elaborata_il          DateTime?
   tentativi             Int       @default(0)
@@ -317,11 +320,11 @@ model Outbox {
 }
 
 model RichiestaIdempotente {
-  utente_id       String   @db.Uuid
-  chiave          String
-  payload_hash    String
-  segnalazione_id String?  @db.Uuid
-  stato           String
+  utente_id       String   @db.VarChar(36)
+  chiave          String   @db.VarChar(191)
+  payload_hash    String   @db.VarChar(64)
+  segnalazione_id String?  @db.VarChar(36)
+  stato           String   @db.VarChar(50)
   scade_il        DateTime
 
   utente       Utente        @relation(fields: [utente_id], references: [id], onDelete: Restrict)

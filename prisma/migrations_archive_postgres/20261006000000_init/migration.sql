@@ -1,4 +1,4 @@
-﻿-- CreateEnum
+-- CreateEnum
 CREATE TYPE "RuoloUtente" AS ENUM ('CITTADINO', 'COMITATO');
 
 -- CreateEnum

@@ -1,0 +1,306 @@
+-- CreateTable
+CREATE TABLE `Quartiere` (
+    `id` VARCHAR(36) NOT NULL,
+    `nome` VARCHAR(191) NOT NULL,
+
+    UNIQUE INDEX `Quartiere_nome_key`(`nome`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `Utente` (
+    `id` VARCHAR(36) NOT NULL,
+    `nome` VARCHAR(100) NOT NULL,
+    `cognome` VARCHAR(100) NOT NULL,
+    `email_normalizzata` VARCHAR(191) NOT NULL,
+    `password_hash` VARCHAR(255) NOT NULL,
+    `verificato_il` DATETIME(3) NULL,
+    `ruolo` ENUM('CITTADINO', 'COMITATO') NOT NULL DEFAULT 'CITTADINO',
+    `stato_account` ENUM('ATTIVO', 'SOSPESO') NOT NULL DEFAULT 'ATTIVO',
+    `quartiere_id` VARCHAR(36) NULL,
+    `creato_il` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `Utente_email_normalizzata_key`(`email_normalizzata`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `Segnalazione` (
+    `id` VARCHAR(36) NOT NULL,
+    `autore_id` VARCHAR(36) NOT NULL,
+    `descrizione` TEXT NOT NULL,
+    `latitudine` DOUBLE NOT NULL,
+    `longitudine` DOUBLE NOT NULL,
+    `origine_posizione` ENUM('MANUALE', 'EXIF_CONFERMATO') NOT NULL,
+    `stato_avanzamento` ENUM('RICEVUTA', 'PRESA_IN_CARICO', 'INVIATA_AI_CANDIDATI', 'RITIRATA') NOT NULL DEFAULT 'RICEVUTA',
+    `stato_moderazione` ENUM('PENDENTE', 'IN_REVISIONE', 'APPROVATA', 'RIFIUTATA') NOT NULL DEFAULT 'PENDENTE',
+    `revisione` INTEGER NOT NULL DEFAULT 1,
+    `creata_il` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `aggiornata_il` DATETIME(3) NOT NULL,
+
+    INDEX `Segnalazione_stato_moderazione_stato_avanzamento_creata_il_i_idx`(`stato_moderazione`, `stato_avanzamento`, `creata_il`, `id`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `Media` (
+    `id` VARCHAR(36) NOT NULL,
+    `segnalazione_id` VARCHAR(36) NOT NULL,
+    `storage_key` VARCHAR(191) NOT NULL,
+    `tipo` ENUM('FOTO', 'VIDEO') NOT NULL,
+    `mime` VARCHAR(100) NOT NULL,
+    `byte_size` INTEGER NOT NULL,
+    `durata_secondi` INTEGER NULL,
+    `sha256` VARCHAR(64) NOT NULL,
+    `stato_file` ENUM('READY', 'QUARANTENA', 'ERRORE') NOT NULL DEFAULT 'READY',
+    `exif_lat` DOUBLE NULL,
+    `exif_lon` DOUBLE NULL,
+    `derivato_key` VARCHAR(191) NULL,
+    `creato_il` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `Media_storage_key_key`(`storage_key`),
+    UNIQUE INDEX `Media_derivato_key_key`(`derivato_key`),
+    INDEX `Media_segnalazione_id_idx`(`segnalazione_id`),
+    UNIQUE INDEX `Media_id_segnalazione_id_key`(`id`, `segnalazione_id`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `Sostegno` (
+    `utente_id` VARCHAR(36) NOT NULL,
+    `segnalazione_id` VARCHAR(36) NOT NULL,
+    `creato_il` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `Sostegno_segnalazione_id_idx`(`segnalazione_id`),
+    PRIMARY KEY (`utente_id`, `segnalazione_id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `Categoria` (
+    `id` VARCHAR(36) NOT NULL,
+    `codice` VARCHAR(191) NOT NULL,
+    `nome` VARCHAR(100) NOT NULL,
+    `attiva` BOOLEAN NOT NULL DEFAULT true,
+
+    UNIQUE INDEX `Categoria_codice_key`(`codice`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `SegnalazioneCategoria` (
+    `segnalazione_id` VARCHAR(36) NOT NULL,
+    `categoria_id` VARCHAR(36) NOT NULL,
+
+    PRIMARY KEY (`segnalazione_id`, `categoria_id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `EventoStato` (
+    `id` VARCHAR(36) NOT NULL,
+    `segnalazione_id` VARCHAR(36) NOT NULL,
+    `attore_id` VARCHAR(36) NULL,
+    `tipo_attore` ENUM('UTENTE', 'SISTEMA') NOT NULL,
+    `ambito` ENUM('AVANZAMENTO', 'MODERAZIONE') NOT NULL,
+    `da_stato` VARCHAR(50) NULL,
+    `a_stato` VARCHAR(50) NOT NULL,
+    `motivazione` TEXT NOT NULL,
+    `revisione` INTEGER NOT NULL,
+    `creato_il` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `EventoStato_segnalazione_id_creato_il_id_idx`(`segnalazione_id`, `creato_il`, `id`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `AuditEvento` (
+    `id` VARCHAR(36) NOT NULL,
+    `attore_id` VARCHAR(36) NULL,
+    `tipo_attore` ENUM('UTENTE', 'SISTEMA') NOT NULL,
+    `segnalazione_id` VARCHAR(36) NULL,
+    `azione` VARCHAR(100) NOT NULL,
+    `request_id` VARCHAR(100) NULL,
+    `dati_json` TEXT NULL,
+    `creato_il` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `AnalisiIa` (
+    `id` VARCHAR(36) NOT NULL,
+    `segnalazione_id` VARCHAR(36) NOT NULL,
+    `media_id` VARCHAR(36) NULL,
+    `revisione` INTEGER NOT NULL,
+    `modulo` ENUM('MODERAZIONE', 'CLASSIFICAZIONE', 'EXIF', 'COERENZA') NOT NULL,
+    `versione_modello` VARCHAR(64) NOT NULL,
+    `versione_policy` VARCHAR(64) NOT NULL,
+    `input_hash` VARCHAR(64) NOT NULL,
+    `stato_esecuzione` ENUM('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'OBSOLETE') NOT NULL DEFAULT 'QUEUED',
+    `esito` VARCHAR(50) NULL,
+    `punteggio` DOUBLE NULL,
+    `dettagli_json` TEXT NULL,
+    `tentativi` INTEGER NOT NULL DEFAULT 0,
+    `creata_il` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `completata_il` DATETIME(3) NULL,
+
+    INDEX `AnalisiIa_stato_esecuzione_creata_il_idx`(`stato_esecuzione`, `creata_il`),
+    UNIQUE INDEX `AnalisiIa_segnalazione_id_revisione_modulo_input_hash_versio_key`(`segnalazione_id`, `revisione`, `modulo`, `input_hash`, `versione_modello`, `versione_policy`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `SuggerimentoCategoria` (
+    `analisi_id` VARCHAR(36) NOT NULL,
+    `categoria_id` VARCHAR(36) NOT NULL,
+    `confidenza` DOUBLE NULL,
+
+    PRIMARY KEY (`analisi_id`, `categoria_id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `UploadTemporaneo` (
+    `id` VARCHAR(36) NOT NULL,
+    `proprietario_id` VARCHAR(36) NOT NULL,
+    `storage_key` VARCHAR(191) NOT NULL,
+    `tipo` ENUM('FOTO', 'VIDEO') NOT NULL,
+    `mime` VARCHAR(100) NOT NULL,
+    `byte_size` INTEGER NOT NULL,
+    `sha256` VARCHAR(64) NOT NULL,
+    `durata_secondi` INTEGER NULL,
+    `exif_lat` DOUBLE NULL,
+    `exif_lon` DOUBLE NULL,
+    `stato` ENUM('IN_CARICAMENTO', 'VALIDO', 'SCARTATO', 'CONSUMATO') NOT NULL DEFAULT 'IN_CARICAMENTO',
+    `scade_il` DATETIME(3) NOT NULL,
+    `consumato_il` DATETIME(3) NULL,
+
+    UNIQUE INDEX `UploadTemporaneo_storage_key_key`(`storage_key`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `TokenAccount` (
+    `id` VARCHAR(36) NOT NULL,
+    `utente_id` VARCHAR(36) NOT NULL,
+    `tipo` ENUM('VERIFICA_EMAIL', 'RESET_PASSWORD') NOT NULL,
+    `token_hash` VARCHAR(64) NOT NULL,
+    `scade_il` DATETIME(3) NOT NULL,
+    `usato_il` DATETIME(3) NULL,
+    `creato_il` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `TokenAccount_token_hash_key`(`token_hash`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `Sessione` (
+    `id` VARCHAR(36) NOT NULL,
+    `utente_id` VARCHAR(36) NOT NULL,
+    `token_hash` VARCHAR(64) NOT NULL,
+    `scade_il` DATETIME(3) NOT NULL,
+    `revocata_il` DATETIME(3) NULL,
+    `creato_il` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    UNIQUE INDEX `Sessione_token_hash_key`(`token_hash`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `Outbox` (
+    `id` VARCHAR(36) NOT NULL,
+    `segnalazione_id` VARCHAR(36) NOT NULL,
+    `revisione` INTEGER NOT NULL,
+    `tipo_evento` VARCHAR(100) NOT NULL,
+    `payload_json` TEXT NOT NULL,
+    `creata_il` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `elaborata_il` DATETIME(3) NULL,
+    `tentativi` INTEGER NOT NULL DEFAULT 0,
+    `prossimo_tentativo_il` DATETIME(3) NULL,
+
+    INDEX `Outbox_elaborata_il_prossimo_tentativo_il_idx`(`elaborata_il`, `prossimo_tentativo_il`),
+    UNIQUE INDEX `Outbox_segnalazione_id_revisione_tipo_evento_key`(`segnalazione_id`, `revisione`, `tipo_evento`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `RichiestaIdempotente` (
+    `utente_id` VARCHAR(36) NOT NULL,
+    `chiave` VARCHAR(191) NOT NULL,
+    `payload_hash` VARCHAR(64) NOT NULL,
+    `segnalazione_id` VARCHAR(36) NULL,
+    `stato` VARCHAR(50) NOT NULL,
+    `scade_il` DATETIME(3) NOT NULL,
+
+    PRIMARY KEY (`utente_id`, `chiave`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- AddForeignKey
+ALTER TABLE `Utente` ADD CONSTRAINT `Utente_quartiere_id_fkey` FOREIGN KEY (`quartiere_id`) REFERENCES `Quartiere`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Segnalazione` ADD CONSTRAINT `Segnalazione_autore_id_fkey` FOREIGN KEY (`autore_id`) REFERENCES `Utente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Media` ADD CONSTRAINT `Media_segnalazione_id_fkey` FOREIGN KEY (`segnalazione_id`) REFERENCES `Segnalazione`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Sostegno` ADD CONSTRAINT `Sostegno_utente_id_fkey` FOREIGN KEY (`utente_id`) REFERENCES `Utente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Sostegno` ADD CONSTRAINT `Sostegno_segnalazione_id_fkey` FOREIGN KEY (`segnalazione_id`) REFERENCES `Segnalazione`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `SegnalazioneCategoria` ADD CONSTRAINT `SegnalazioneCategoria_segnalazione_id_fkey` FOREIGN KEY (`segnalazione_id`) REFERENCES `Segnalazione`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `SegnalazioneCategoria` ADD CONSTRAINT `SegnalazioneCategoria_categoria_id_fkey` FOREIGN KEY (`categoria_id`) REFERENCES `Categoria`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `EventoStato` ADD CONSTRAINT `EventoStato_segnalazione_id_fkey` FOREIGN KEY (`segnalazione_id`) REFERENCES `Segnalazione`(`id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+-- AddForeignKey
+ALTER TABLE `EventoStato` ADD CONSTRAINT `EventoStato_attore_id_fkey` FOREIGN KEY (`attore_id`) REFERENCES `Utente`(`id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+-- AddForeignKey
+ALTER TABLE `AuditEvento` ADD CONSTRAINT `AuditEvento_attore_id_fkey` FOREIGN KEY (`attore_id`) REFERENCES `Utente`(`id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+-- AddForeignKey
+ALTER TABLE `AuditEvento` ADD CONSTRAINT `AuditEvento_segnalazione_id_fkey` FOREIGN KEY (`segnalazione_id`) REFERENCES `Segnalazione`(`id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+-- AddForeignKey
+ALTER TABLE `AnalisiIa` ADD CONSTRAINT `AnalisiIa_segnalazione_id_fkey` FOREIGN KEY (`segnalazione_id`) REFERENCES `Segnalazione`(`id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+-- AddForeignKey
+ALTER TABLE `AnalisiIa` ADD CONSTRAINT `AnalisiIa_media_id_segnalazione_id_fkey` FOREIGN KEY (`media_id`, `segnalazione_id`) REFERENCES `Media`(`id`, `segnalazione_id`) ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+-- AddForeignKey
+ALTER TABLE `SuggerimentoCategoria` ADD CONSTRAINT `SuggerimentoCategoria_analisi_id_fkey` FOREIGN KEY (`analisi_id`) REFERENCES `AnalisiIa`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `SuggerimentoCategoria` ADD CONSTRAINT `SuggerimentoCategoria_categoria_id_fkey` FOREIGN KEY (`categoria_id`) REFERENCES `Categoria`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `UploadTemporaneo` ADD CONSTRAINT `UploadTemporaneo_proprietario_id_fkey` FOREIGN KEY (`proprietario_id`) REFERENCES `Utente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `TokenAccount` ADD CONSTRAINT `TokenAccount_utente_id_fkey` FOREIGN KEY (`utente_id`) REFERENCES `Utente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Sessione` ADD CONSTRAINT `Sessione_utente_id_fkey` FOREIGN KEY (`utente_id`) REFERENCES `Utente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Outbox` ADD CONSTRAINT `Outbox_segnalazione_id_fkey` FOREIGN KEY (`segnalazione_id`) REFERENCES `Segnalazione`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RichiestaIdempotente` ADD CONSTRAINT `RichiestaIdempotente_utente_id_fkey` FOREIGN KEY (`utente_id`) REFERENCES `Utente`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `RichiestaIdempotente` ADD CONSTRAINT `RichiestaIdempotente_segnalazione_id_fkey` FOREIGN KEY (`segnalazione_id`) REFERENCES `Segnalazione`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddCheckConstraints (MySQL 8.0.16+)
+ALTER TABLE `Segnalazione` ADD CONSTRAINT `chk_segnalazione_coords` CHECK (`latitudine` BETWEEN -90 AND 90 AND `longitudine` BETWEEN -180 AND 180);
+ALTER TABLE `Media` ADD CONSTRAINT `chk_media_bytesize` CHECK (`byte_size` > 0);
+ALTER TABLE `Media` ADD CONSTRAINT `chk_exif_coords` CHECK ((`exif_lat` IS NULL AND `exif_lon` IS NULL) OR (`exif_lat` IS NOT NULL AND `exif_lon` IS NOT NULL));
+ALTER TABLE `AnalisiIa` ADD CONSTRAINT `chk_analisi_revisione` CHECK (`revisione` > 0);
+ALTER TABLE `AnalisiIa` ADD CONSTRAINT `chk_analisi_punteggio` CHECK (`punteggio` IS NULL OR (`punteggio` >= 0 AND `punteggio` <= 1));
+ALTER TABLE `AuditEvento` ADD CONSTRAINT `chk_audit_attore` CHECK ((`tipo_attore` = 'UTENTE' AND `attore_id` IS NOT NULL) OR (`tipo_attore` = 'SISTEMA' AND `attore_id` IS NULL));
+ALTER TABLE `EventoStato` ADD CONSTRAINT `chk_evento_attore` CHECK ((`tipo_attore` = 'UTENTE' AND `attore_id` IS NOT NULL) OR (`tipo_attore` = 'SISTEMA' AND `attore_id` IS NULL));

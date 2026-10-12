@@ -19,7 +19,7 @@ async function main() {
   });
 
   // Upsert Categoria
-  const cDecoro = await prisma.categoria.upsert({
+  await prisma.categoria.upsert({
     where: { codice: 'DECORO_URBANO' },
     update: {},
     create: {
@@ -31,7 +31,7 @@ async function main() {
   });
 
   // Cittadino Verificato
-  const cittadino1 = await prisma.utente.upsert({
+  await prisma.utente.upsert({
     where: { email_normalizzata: 'mario.rossi@example.com' },
     update: { password_hash: hashedPassword },
     create: {
@@ -59,8 +59,7 @@ async function main() {
       password_hash: hashedPassword,
       ruolo: 'CITTADINO',
       stato_account: 'SOSPESO',
-      verificato_il: new Date(),
-      sospeso_il: new Date()
+      verificato_il: new Date()
     }
   });
 

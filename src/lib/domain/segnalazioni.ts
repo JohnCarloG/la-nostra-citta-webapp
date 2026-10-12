@@ -1,6 +1,20 @@
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '../db';
 
-const prisma = new PrismaClient()
+/**
+ * STATO IMPLEMENTATIVO - PERCORSI NON IMPLEMENTATI / LIMITI APERTI:
+ * 
+ * 1. Rimozione Media:
+ *    Il percorso di cancellazione di singoli media o dell'ultimo media da una segnalazione
+ *    è formalmente NON IMPLEMENTATO nel dominio. Nessuna API, Server Action o procedura non protetta
+ *    è esposta ai client, garantendo che nessuna segnalazione possa essere lasciata priva di prove probatorie.
+ * 
+ * 2. Background Retry Worker:
+ *    Nessun demone o loop di riesecuzione automatica in background è attualmente attivo.
+ *    I campi 'tentativi' e 'prossimo_tentativo_il' in Outbox e AnalisiIa sono predisposizioni di schema.
+ * 
+ * 3. File Upload Fisico su Storage S3 e Moderazione Asincrona IA (Fase 3):
+ *    Rigorosamente SOSPESE fino all'autorizzazione e collaudo completo della Fase 2.
+ */
 
 export async function createSegnalazioneAtomica(
   autoreId: string,
@@ -11,14 +25,29 @@ export async function createSegnalazioneAtomica(
   quartiereId?: string,
   categoriaId?: string
 ) {
+  // 1. Validazione requisiti cardinalità e allegati (RF04, VI04)
   if (!storageKeys || storageKeys.length === 0) {
     throw new Error('La segnalazione richiede almeno un media');
   }
 
-  // Assicuriamoci che non ci siano duplicati richiesti prima ancora di aprire la transazione
+  if (storageKeys.length > 5) {
+    throw new Error('Massimo 5 allegati consentiti per segnalazione');
+  }
+
+  // Prevenzione identificatori upload duplicati nella richiesta
   const uniqueKeys = new Set(storageKeys);
   if (uniqueKeys.size !== storageKeys.length) {
     throw new Error('Identificatori upload duplicati nella richiesta');
+  }
+
+  // Validazione coordinate geografiche (VI05)
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    throw new Error('Coordinate geografiche non valide (latitudine tra -90 e 90, longitudine tra -180 e 180)');
+  }
+
+  // Validazione descrizione (RF04)
+  if (!descrizione || descrizione.trim().length === 0) {
+    throw new Error('La descrizione della segnalazione non può essere vuota');
   }
 
   // Creazione atomica: Segnalazione, Media e gli Eventi/Audit associati nella stessa transazione.
@@ -66,8 +95,11 @@ export async function createSegnalazioneAtomica(
         stato_avanzamento: 'RICEVUTA',
         stato_moderazione: 'PENDENTE',
         revisione: 1,
-        quartiere_id: quartiereId,
-        categoria_id: categoriaId,
+        categorie: categoriaId ? {
+          create: {
+            categoria_id: categoriaId
+          }
+        } : undefined,
         
         // Creazione innestata dei Media usando ESCLUSIVAMENTE dati validati dal DB
         media: {
@@ -105,7 +137,7 @@ export async function createSegnalazioneAtomica(
           ]
         },
 
-        // Creazione Audit
+        // Creazione Audit (append-only)
         audit: {
           create: {
             tipo_attore: 'UTENTE',
@@ -116,7 +148,7 @@ export async function createSegnalazioneAtomica(
       }
     });
 
-    // Inserimento Outbox per l'analisi NLP e l'invio ai candidati o processi asincroni
+    // Inserimento Outbox per l'analisi e i processi asincroni
     await tx.outbox.create({
       data: {
         segnalazione_id: segnalazione.id,
@@ -130,8 +162,15 @@ export async function createSegnalazioneAtomica(
   });
 }
 
+/**
+ * Aggiunta di un sostegno a una segnalazione (RF06, VI03, RF12)
+ * Verifica:
+ * - Utente attivo e verificato
+ * - Segnalazione esistente, approvata e non ritirata
+ * - Divieto assoluto di autosostegno (autore_id !== utenteId)
+ * - Inserimento traccia in AuditEvento
+ */
 export async function aggiungiSostegno(utenteId: string, segnalazioneId: string) {
-  // Il vincolo utente_id != segnalazione.autore_id e account attivo
   return prisma.$transaction(async (tx) => {
     const utente = await tx.utente.findUnique({
       where: { id: utenteId },
@@ -153,11 +192,110 @@ export async function aggiungiSostegno(utenteId: string, segnalazioneId: string)
       throw new Error('Possibile sostenere solo segnalazioni pubbliche');
     }
 
-    // Upsert o create gestiscono il vincolo di unicità / PK
-    return tx.sostegno.upsert({
+    // Upsert gestisce il vincolo di unicità / PK composta (utente_id, segnalazione_id)
+    const sostegno = await tx.sostegno.upsert({
       where: { utente_id_segnalazione_id: { utente_id: utenteId, segnalazione_id: segnalazioneId } },
       create: { utente_id: utenteId, segnalazione_id: segnalazioneId },
       update: {}
     });
+
+    // Tracciamento Audit append-only (RF12)
+    await tx.auditEvento.create({
+      data: {
+        tipo_attore: 'UTENTE',
+        attore_id: utenteId,
+        segnalazione_id: segnalazioneId,
+        azione: 'AGGIUNGI_SOSTEGNO'
+      }
+    });
+
+    return sostegno;
   });
+}
+
+/**
+ * Rimozione del sostegno (RF06 - revocabilità, RF12)
+ */
+export async function rimuoviSostegno(utenteId: string, segnalazioneId: string) {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.sostegno.findUnique({
+      where: { utente_id_segnalazione_id: { utente_id: utenteId, segnalazione_id: segnalazioneId } }
+    });
+
+    if (!existing) {
+      throw new Error('Sostegno non presente');
+    }
+
+    await tx.sostegno.delete({
+      where: { utente_id_segnalazione_id: { utente_id: utenteId, segnalazione_id: segnalazioneId } }
+    });
+
+    await tx.auditEvento.create({
+      data: {
+        tipo_attore: 'UTENTE',
+        attore_id: utenteId,
+        segnalazione_id: segnalazioneId,
+        azione: 'RIMUOVI_SOSTEGNO'
+      }
+    });
+
+    return true;
+  });
+}
+
+/**
+ * Query di classifica pubblica (RF06, 04_MODELLO_LOGICO.md)
+ * Considera solo segnalazioni APPROVATA e diverse da RITIRATA.
+ * Conta solo i sostegni provenienti da profili ATTIVI e VERIFICATI.
+ */
+export async function getClassificaSegnalazioni(limite = 20, offset = 0) {
+  const segnalazioni = await prisma.segnalazione.findMany({
+    where: {
+      stato_moderazione: 'APPROVATA',
+      stato_avanzamento: { not: 'RITIRATA' }
+    },
+    include: {
+      autore: {
+        select: { id: true, nome: true, cognome: true }
+      },
+      media: {
+        where: { stato_file: 'READY' },
+        take: 1
+      },
+      categorie: {
+        include: { categoria: true }
+      },
+      sostegni: {
+        where: {
+          utente: {
+            stato_account: 'ATTIVO',
+            verificato_il: { not: null }
+          }
+        },
+        select: { utente_id: true }
+      }
+    },
+    skip: offset,
+    take: limite
+  });
+
+  return segnalazioni
+    .map((s) => ({
+      id: s.id,
+      descrizione: s.descrizione,
+      latitudine: s.latitudine,
+      longitudine: s.longitudine,
+      stato_avanzamento: s.stato_avanzamento,
+      creata_il: s.creata_il,
+      autore: s.autore,
+      categorie: s.categorie.map(c => c.categoria.nome),
+      primoMedia: s.media[0] || null,
+      totaleSostegniValidi: s.sostegni.length
+    }))
+    .sort((a, b) => {
+      if (b.totaleSostegniValidi !== a.totaleSostegniValidi) {
+        return b.totaleSostegniValidi - a.totaleSostegniValidi;
+      }
+      return new Date(a.creata_il).getTime() - new Date(b.creata_il).getTime();
+    });
 }

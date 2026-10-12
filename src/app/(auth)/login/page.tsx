@@ -5,13 +5,17 @@ import { loginAction } from '@/actions/auth';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-  const [state, formAction, isPending] = useActionState(async (prevState: any, formData: FormData) => {
-    const res = await loginAction(formData);
-    if (res.success) {
-      window.location.href = '/dashboard'; // Redirect pieno per forzare il ricaricamento sessione
-    }
-    return res;
-  }, null);
+  const router = useRouter();
+  const [state, formAction, isPending] = useActionState(
+    async (_prevState: { error?: string; success?: boolean } | null, formData: FormData) => {
+      const res = await loginAction(formData);
+      if (res.success) {
+        router.push('/dashboard');
+      }
+      return res;
+    },
+    null
+  );
 
   return (
     <div className="max-w-md mx-auto mt-20 p-6 bg-white rounded-lg shadow-md">
@@ -52,6 +56,23 @@ export default function LoginPage() {
           {isPending ? 'Accesso in corso...' : 'Accedi'}
         </button>
       </form>
+
+      <div className="mt-6 text-center text-sm text-gray-600 border-t pt-4 space-y-2">
+        <div className="flex justify-between items-center text-xs">
+          <a href="/reset-password" className="text-blue-600 hover:underline">
+            Password dimenticata?
+          </a>
+          <a href="/resend-verification" className="text-gray-500 hover:underline">
+            Reinvio verifica email
+          </a>
+        </div>
+        <div className="pt-2">
+          Non hai ancora un account?{' '}
+          <a href="/register" className="text-blue-600 font-medium hover:underline">
+            Registrati
+          </a>
+        </div>
+      </div>
     </div>
   );
 }

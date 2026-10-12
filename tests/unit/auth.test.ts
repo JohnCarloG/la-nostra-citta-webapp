@@ -27,6 +27,7 @@ vi.mock('@prisma/client', () => {
   return { PrismaClient: class { constructor() { return mPrisma; } } };
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const prisma = new PrismaClient() as any;
 
 describe('Flussi di Autenticazione e Autorizzazione (Funzioni Pure/Mock)', () => {
@@ -42,7 +43,7 @@ describe('Flussi di Autenticazione e Autorizzazione (Funzioni Pure/Mock)', () =>
       .rejects.toThrow('Email già registrata');
       
     // Verifica normalizzazione
-    expect(prisma.utente.findUnique).toHaveBeenCalledWith({ where: { email: 'test@email.com' } });
+    expect(prisma.utente.findUnique).toHaveBeenCalledWith({ where: { email_normalizzata: 'test@email.com' } });
   });
 
   it('Login fallisce con password errata', async () => {
@@ -75,24 +76,15 @@ describe('Flussi di Autenticazione e Autorizzazione (Funzioni Pure/Mock)', () =>
   });
 
   it('Verifica email fallisce se token scaduto', async () => {
-    prisma.tokenAccount.findUnique.mockResolvedValue({
-      id: 'tok1',
-      tipo: 'VERIFICA_EMAIL',
-      scade_il: new Date(Date.now() - 10000) // scaduto 10 sec fa
-    });
+    prisma.tokenAccount.updateMany.mockResolvedValue({ count: 0 });
     
-    await expect(auth.verificaEmail('tokenchiaro')).rejects.toThrow('Token scaduto');
+    await expect(auth.verificaEmail('tokenchiaro')).rejects.toThrow('Token non valido, scaduto o già utilizzato');
   });
 
   it('Verifica email fallisce se token già usato', async () => {
-    prisma.tokenAccount.findUnique.mockResolvedValue({
-      id: 'tok1',
-      tipo: 'VERIFICA_EMAIL',
-      usato_il: new Date(),
-      scade_il: new Date(Date.now() + 10000)
-    });
+    prisma.tokenAccount.updateMany.mockResolvedValue({ count: 0 });
     
-    await expect(auth.verificaEmail('tokenchiaro')).rejects.toThrow('Token già utilizzato');
+    await expect(auth.verificaEmail('tokenchiaro')).rejects.toThrow('Token non valido, scaduto o già utilizzato');
   });
 
   it('Sospensione annulla dinamicamente la validità della sessione', async () => {
@@ -107,12 +99,15 @@ describe('Flussi di Autenticazione e Autorizzazione (Funzioni Pure/Mock)', () =>
   });
 
   it('Reset password disconnette le sessioni esistenti', async () => {
-    prisma.tokenAccount.findUnique.mockResolvedValue({
-      id: 'tok1',
-      tipo: 'RESET_PASSWORD',
+    prisma.tokenAccount.updateMany.mockResolvedValue({ count: 1 });
+    prisma.tokenAccount.findUnique.mockResolvedValue({ 
+      id: 'tok1', 
+      tipo: 'RESET_PASSWORD', 
       utente_id: 'u1',
       scade_il: new Date(Date.now() + 10000)
     });
+    prisma.utente.update.mockResolvedValue({ id: 'u1' });
+    prisma.sessione.updateMany.mockResolvedValue({ count: 2 });
     
     await auth.eseguiResetPassword('tokenchiaro', 'nuovapass');
     
@@ -157,4 +152,42 @@ describe('Flussi di Autenticazione e Autorizzazione (Funzioni Pure/Mock)', () =>
     await expect(auth.verificaEmail('tokenusato'))
       .rejects.toThrow('Token non valido, scaduto o già utilizzato');
   });
+
+  describe('reinviaVerificaEmail', () => {
+    it('Ritorna false se utente inesistente o già verificato', async () => {
+      prisma.utente.findUnique.mockResolvedValue(null);
+      const resInesistente = await auth.reinviaVerificaEmail('non.esiste@example.com');
+      expect(resInesistente).toBe(false);
+
+      prisma.utente.findUnique.mockResolvedValue({
+        id: 'u-verificato',
+        email_normalizzata: 'gia.verificato@example.com',
+        stato_account: 'ATTIVO',
+        verificato_il: new Date()
+      });
+      const resGiaVerificato = await auth.reinviaVerificaEmail('gia.verificato@example.com');
+      expect(resGiaVerificato).toBe(false);
+    });
+
+    it('Genera nuovo token e ritorna true per utente attivo non verificato', async () => {
+      prisma.utente.findUnique.mockResolvedValue({
+        id: 'u-non-verificato',
+        email_normalizzata: 'da.verificare@example.com',
+        stato_account: 'ATTIVO',
+        verificato_il: null
+      });
+      prisma.tokenAccount.updateMany.mockResolvedValue({ count: 1 });
+      prisma.tokenAccount.create.mockResolvedValue({ id: 'new-tok' });
+
+      const res = await auth.reinviaVerificaEmail('da.verificare@example.com');
+      expect(res).toBe(true);
+      expect(prisma.tokenAccount.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          utente_id: 'u-non-verificato',
+          tipo: 'VERIFICA_EMAIL'
+        })
+      });
+    });
+  });
 });
+

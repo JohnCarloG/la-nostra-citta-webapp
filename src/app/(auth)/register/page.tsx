@@ -4,16 +4,19 @@ import { useActionState } from 'react';
 import { registerAction } from '@/actions/auth';
 
 export default function RegisterPage() {
-  const [state, formAction, isPending] = useActionState(async (prevState: any, formData: FormData) => {
-    return await registerAction(formData);
-  }, null);
+  const [state, formAction, isPending] = useActionState(
+    async (_prevState: { error?: string; success?: boolean } | null, formData: FormData) => {
+      return await registerAction(formData);
+    },
+    null
+  );
 
   if (state?.success) {
     return (
       <div className="max-w-md mx-auto mt-20 p-6 bg-white rounded-lg shadow-md text-center">
         <h1 className="text-2xl font-bold mb-4 text-green-600">Registrazione Completata!</h1>
         <p className="text-gray-600">
-          Controlla la tua email per il link di verifica. L'account deve essere verificato prima di effettuare l'accesso.
+          Controlla la tua email per il link di verifica. L&apos;account deve essere verificato prima di effettuare l&apos;accesso.
         </p>
       </div>
     );

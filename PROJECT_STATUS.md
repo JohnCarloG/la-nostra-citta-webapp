@@ -1,77 +1,95 @@
 # Stato del Progetto
 
 **Progetto**: La Nostra Città, Il Nostro Futuro  
-**Target Autorizzato**: Next.js (App Router) + Prisma ORM (5.22.0) + MySQL su Aiven  
-**Stato Globale**: Fase 2 Completata e Collaudata su Aiven MySQL (`la_nostra_citta_test`). **62/62 Unit Test passati**, **21/21 Test di Integrazione DB superati** su Aiven (eseguiti con successo deterministico e idempotente), 12/12 Step E2E Auth completati su Aiven, Build Produzione con 8 Route pronta. **Fase 3 — Storage Locale Implementata**: endpoint upload dedicato `POST /api/uploads`, validazione strutturale MIME, ciclo di vita UploadTemporaneo con tracciamento orfani. Collaudo manuale upload **NON ESEGUITO** (rinviato). Moderazione IA **SOSPESA**.
+**Target Autorizzato**: Next.js 16 (App Router) + Prisma ORM (5.22.0) + MySQL 8.4 su Aiven  
+**Stato Globale**: **Fase 4 (Community e Supervisione) Completata e Collaudata con Successo** su Aiven MySQL (`la_nostra_citta_test`).  
+- **62/62 Unit Test passati**  
+- **32/32 Test di Integrazione DB superati** su Aiven live (inclusi i test formali di specifica **T05, T06, T11, T12, T13**)  
+- **12/12 Step E2E Auth superati**  
+- **16 Route di produzione** compilate con successo in Next.js  
+- **TypeScript**: 0 errori (`tsc --noEmit`)  
+- **ESLint**: 0 errori e 0 warning  
+- **Storage Privato e Media**: protetto tramite endpoint dedicato `/api/media/[id]` conforme alle regole di visibilità. Collaudo manuale upload fisico **RINVIATO alla fine** per scelta dell'operatore (non bloccante).  
+- **Moderazione IA**: rigorosamente **SOSPESA** (nessuna spesa o servizio esterno attivato).
 
 ---
 
 ## Avanzamento per Fasi
 
 ### Fase 0 - Setup e Specifiche
-- Requisiti e modello logico formalizzati in `docs/progetto/02_REQUISITI_E_VINCOLI.md` e `docs/progetto/04_MODELLO_LOGICO.md`.
+- Requisiti e modello logico formalizzati in `docs/progetto/02_REQUISITI_E_VINCOLI.md` e `docs/progetto/04_MODELLO_LOGICO.md`. Matrice dei gap allineata in `docs/GAP_MATRIX.md`.
 
 ### Fase 1 - Schema e Migrazioni MySQL
 - Schema Prisma configurato nativamente per MySQL InnoDB (`provider = "mysql"`).
 - Vincolo di Foreign Key composta: `AnalisiIa(media_id, segnalazione_id)` -> `Media(id, segnalazione_id)` con `@@unique([id, segnalazione_id])` su `Media`, configurata con `ON DELETE RESTRICT ON UPDATE RESTRICT`.
 - Migrazione attiva unica: `prisma/migrations/20261006000000_init_mysql/migration.sql` in **UTF-8 senza BOM**, integrata con i vincoli `CHECK` nativi MySQL 8 (`chk_segnalazione_coords`, `chk_media_bytesize`, `chk_exif_coords`, `chk_analisi_revisione`, `chk_analisi_punteggio`, `chk_audit_attore`, `chk_evento_attore`).
-- Recupero controllato DDL eseguito con successo su `la_nostra_citta_test` impostando `RESTRICT` sulle azioni referenziali e applicando i vincoli `CHECK` (registrata con `prisma migrate resolve --applied`).
-- Migrazioni PostgreSQL storiche isolate in `prisma/migrations_archive_postgres/`.
 
-### Fase 2 - Dominio, Pagine, Rate Limiting e Sicurezza
-- **Autenticazione Stateful**:
-  - Registrazione con hashing della password (`hashPassword`), emissione token monouso e salvataggio `TokenAccount`.
-  - Verifica email con consumo atomico transazionale (`tx.tokenAccount.updateMany` con clausola `usato_il: null`) che impedisce categoricamente il doppio utilizzo e le race conditions.
-  - Reinvio verifica (`reinviaVerificaEmail`) che invalida automaticamente tutti i token precedenti emessi per lo stesso account.
-  - Login con verifica password hash, controllo dinamicamente vincolante su `stato_account === 'ATTIVO'` e `verificato_il !== null`.
-  - Sessioni gestite su DB (`Sessione`) con token crittografati SHA-256 e durata 7 giorni.
-  - Sospensione dinamica: `getSessionUtente` rifiuta istantaneamente sessioni aperte se l'account passa a `SOSPESO`.
-  - Reset password (`richiediResetPassword` + `eseguiResetPassword`): consumo atomico del token, aggiornamento password e **revoca immediata di tutte le sessioni aperte** dell'utente.
-  - Logout esplicito con notifica di errore e rimozione cookie.
-- **Server Actions con Validazione di Sicurezza**:
-  - Validazione regex su formato email e controllo lunghezza minima password (>= 8 caratteri) su registrazione, login, recupero e cambio password.
-  - Rate limiting sliding-window su memoria (`MemoryRateLimiter`): 5 tentativi/min per login/registrazione/reinvio (`authRateLimiter`), 3 tentativi/5 min per reset password (`resetPasswordRateLimiter`).
-- **Segnalazioni e Dominio Territoriale**:
-  - `createSegnalazioneAtomica`: verifica idoneità autore (attivo e verificato), controllo cardinalità minima media (>= 1 media, garantito a livello applicativo), massimo 5 allegati (RF04), divieto duplicati, validazione coordinate geografiche (lat -90..90, lon -180..180), consumo atomico e monouso di `UploadTemporaneo`, creazione atomica di `Segnalazione`, `Media` (stato READY), `EventoStato`, `AuditEvento` e `Outbox`.
-  - `aggiungiSostegno`: blocco categorico dell'autosostegno (`autore_id !== utenteId`), controllo requisiti utente e segnalazione approvata/non ritirata, tracciamento append-only in `AuditEvento` (RF12).
-  - `rimuoviSostegno`: revoca del sostegno con cancellazione e tracciamento append-only in `AuditEvento` (RF06, RF12).
-  - `getClassificaSegnalazioni`: query aggregata conforme a `04_MODELLO_LOGICO.md` che ordina per sostegni decrescenti escludendo segnalazioni ritirate e considerando esclusivamente i voti di profili attivi e verificati.
-- **Interfaccia Utente (Next.js 16 App Router)**:
-  - Homepage istituzionale del portale civico (`/`).
-  - Dashboard protetta (`/dashboard`) con dati utente, badge di ruolo (`CITTADINO`/`COMITATO`) e stato, e logout esplicito.
-  - Pagine di autenticazione: `/login`, `/register`, `/verify`, `/reset-password`, `/reset-password/confirm`, `/resend-verification`.
-- **Garanzie di Sicurezza nei Test DB (`tests/helpers/test-db.ts`)**:
-  - Doppia guardia obbligatoria: validazione statica dei parametri (`AUTHORIZED_TEST_HOST`, `AUTHORIZED_TEST_PORT`, target tassativo `la_nostra_citta_test`) e verifica dinamica live interrogando il server (`SELECT DATABASE()`).
-  - Rifiuto categorico di TLS debole (`sslaccept=strict` obbligatorio) e verifica dell'esistenza fisica del certificato CA passato via `sslcert` con percorso assoluto.
-  - Blocco assoluto di qualsiasi pulizia o test distruttivo su database diversi da `la_nostra_citta_test` (es. `defaultdb`).
-  - Sequenza transazionale rigorosa: `AuditEvento` eliminato prima di `Segnalazione` e `Utente`.
-  - Mascheramento delle credenziali (`maskDatabaseUrl`) nei log per azzerare rischi di esposizione password.
-  - Esecuzione sequenziale deterministica dei test di integrazione (`vitest.config.mts`: `fileParallelism: false`, `maxConcurrency: 1`) per evitare conflitti tra le suite che condividono il database di test.
+### Fase 2 - Dominio, Identità, Rate Limiting e Sicurezza
+- **Autenticazione Stateful**: registrazione, token monouso, consumo atomico anti-race conditions, login, sessioni su DB SHA-256, sospensione dinamica dell'account (invalida immediatamente le sessioni aperte), reset password con revoca di tutte le sessioni aperte, logout esplicito.
+- **Validazione e Protezione**: rate limiting su finestra scorrevole in memoria, validazione password e formato email.
 
-### Limiti Aperti e Funzionalità Non Implementate (Dichiarati Esplicitamente)
-1. **Rimozione Media / Ultimo Media**: la cancellazione dei singoli file o dell'ultimo media da segnalazioni pubblicate è **non implementata** a livello di dominio per impedire la rimozione indebita di prove probatorie.
-2. **Vincolo "Almeno un Media"**: garantito esclusivamente dai percorsi applicativi (`createSegnalazioneAtomica`), non da un vincolo a livello di schema MySQL (dove una scrittura diretta su tabella potrebbe creare segnalazioni senza media).
-3. **Worker Asincrono di Retry**: nessun worker di retry o demone background è attivo; i campi `tentativi` e `prossimo_tentativo_il` sono predisposizioni di schema.
-4. **Fase 3 (Upload Fisico consolidato / Moderazione IA sospesa)**:
-   - **Storage Locale Privato**: **IMPLEMENTATO** con `LocalDiskStorageProvider` su directory privata `.private_storage/`.
-   - **Predisposizione S3**: **SOLTANTO PREDISPOSTO** tramite l'interfaccia `StorageProvider`. Nessun adapter AWS S3 è implementato. Le variabili d'ambiente non sono sufficienti per attivarlo e la richiesta esplicita di un provider non implementato solleva eccezione senza fallback locale silenzioso.
-   - **Endpoint Upload Dedicato**: implementato via `POST /api/uploads` (max 10 MiB foto / 50 MiB video) per non espandere indiscriminatamente il limite di body delle Server Action del resto dell'app (mantenute a 1 MiB).
-   - **Validazione Strutturale**: controllo decodificabilità e chunk/segmenti (JPEG SOI/SOF/EOI, PNG IHDR/IDAT/IEND, WebP RIFF/VP8, MP4 ftyp+moov/mdat) con limiti di risorse anti-DoS. EXIF malformato gestito senza crash; coordinate EXIF trattate come non probatorie.
-   - **Ciclo di Vita, Tracciamento Orfani e Pulizia**: registrazione persistente degli orfani in `.orphaned_storage_keys.json` in caso di doppia anomalia (DB fail + delete storage fail). Pulizia (`pulisciUploadTemporaneiScaduti`) protetta da concorrenza, che preserva i file `CONSUMATO` e referenziati da `Media`. Invocata manualmente da comando (`npm run cleanup:uploads`) o schedulatore OS, non da demone interno.
-   - **Moderazione Asincrona IA**: rigorosamente **SOSPESA**.
+### Fase 3 - Upload Fisico e Storage Privato
+- **Storage Locale Privato**: `LocalDiskStorageProvider` su directory privata `.private_storage/`. Predisposizione S3 mantenuta come pura interfaccia (senza fallback silenzioso).
+- **Validazione Strutturale**: magic bytes e decodifica chunk (JPEG SOI/SOF/EOI, PNG IHDR/IDAT/IEND, WebP RIFF/VP8, MP4 ftyp+moov/mdat) con limiti anti-DoS (10 MiB foto / 50 MiB video).
+- **Ciclo di vita UploadTemporaneo**: consumo atomico, rollback compensativo, tracciamento orfani e garbage collection controllata.
+
+### Fase 4 - Community, Supervisione, Visibilità e Classifica (COMPLETATA)
+- **Elenco e Dettaglio con Visibilità Autorizzata (VI06, T12)**:
+  - Policy di visibilità unificata `isSegnalazionePubblica`: visibile pubblicamente se e solo se `stato_moderazione === 'APPROVATA'` e `stato_avanzamento !== 'RITIRATA'`.
+  - Percorsi pubblici (`/segnalazioni`, `/classifica`, `/mappa`, `/api/media/[id]`) condividono categoricamente la stessa policy.
+  - Dettaglio segnalazione (`/segnalazioni/[id]`): fruibile da visitatori per segnalazioni pubbliche; se privata/in revisione/ritirata, visibile unicamente all'autore originario o a membri del `COMITATO`.
+- **Filtri e Paginazione (`/segnalazioni`)**:
+  - Filtri per categoria a catalogo, stato avanzamento (`RICEVUTA`, `PRESA_IN_CARICO`, `INVIATA_AI_CANDIDATI`), ricerca testuale (`q`) e ordinamento (`piu_recenti`, `piu_sostenute`, `meno_recenti`).
+  - Paginazione server-side accessibile con indicatore e controlli semantici.
+- **Mappa con Alternativa Testuale Pienamente Utilizzabile (RF09, T16)**:
+  - Visualizzazione mappa geolocalizzata su territorio comunale di Milano (`/mappa`).
+  - **Alternativa testuale accessibile integrata**: pannello tabellare completo con coordinate precise, descrizione, categorie e link, navigabile da tastiera e tecnologie assistive.
+- **Sostegno e Revoca Idempotenti (RF06, VI03, T05)**:
+  - Aggiunta sostegno: vincolo categorico contro l'autosostegno (`autore_id !== utenteId`), controllo account attivo e verificato, inserimento `AuditEvento` ('AGGIUNGI_SOSTEGNO').
+  - Gestione concorrenza su chiavi duplicate (`P2002`): due richieste simultanee creano un'unica riga.
+  - Revoca sostegno (`rimuoviSostegno`): operazione idempotente; invocazioni ripetute restituiscono successo senza sollevare errori né corrompere lo stato.
+  - Esclusione sostenitori sospesi: la classifica calcola i voti solo con `COUNT(u.id)` di utenti con `stato_account = 'ATTIVO'` e `verificato_il IS NOT NULL`.
+- **Classifica con Conteggio e Spareggio Deterministico (RF06, T13)**:
+  - Aggregazione diretta conforme al SQL di `04_MODELLO_LOGICO.md`: `ORDER BY sostegni_validi DESC, s.creata_il ASC, s.id ASC`.
+  - Include le segnalazioni con 0 voti validi in graduatoria; esclude rigorosamente segnalazioni ritirate o in revisione.
+  - Molteplici categorie confermate e molteplici allegati non alterano né moltiplicano i voti.
+- **Area Operativa Comitato e Categorie Confermate (RF03, RF08, RF11, VI07, T06)**:
+  - Dashboard riservata `/comitato` protetta da autorizzazione server-side.
+  - Coda revisioni prioritarie per segnalazioni in stato `PENDENTE` o `IN_REVISIONE`.
+  - Transizioni di moderazione consentite:
+    - da `PENDENTE` o `IN_REVISIONE` a `APPROVATA` o `RIFIUTATA`.
+    - da `APPROVATA` a `IN_REVISIONE` (criticità).
+    - da `RIFIUTATA` a `IN_REVISIONE` (riapertura motivata).
+  - Transizioni di avanzamento consentite:
+    - da `RICEVUTA` a `PRESA_IN_CARICO` (richiede `APPROVATA`).
+    - da `PRESA_IN_CARICO` a `INVIATA_AI_CANDIDATI` (richiede `APPROVATA`).
+    - da qualunque stato ad avanzamento `RITIRATA` (con motivazione; stato terminale).
+  - **Controllo Concorrenza Ottimistica e Row-Level Lock**:
+    - Serializzazione con lock `FOR UPDATE` e verifica stringente su `expectedRevision` e `expectedState`. Due moderatori concorrenti: uno solo applica la decisione, il secondo riceve errore 409 `ConcurrencyConflictError`.
+  - **Gestione Categorie Confermate**: associazione M:N con `Categoria` a catalogo con validazione di unicità e appartenenza.
+- **Accesso Protetto ai Media senza Percorsi Fisici Esposti (VI06, VI10)**:
+  - Endpoint dedicato `/api/media/[id]`. Lo storage fisico `.private_storage/` resta protetto e inaccessibile da browser.
+  - La route verifica l'autorizzazione: serve il file con header corretti se la segnalazione è pubblica; per segnalazioni private, verifica sessione dell'autore o del comitato, altrimenti risponde 404 senza rivelare l'esistenza del file (T12).
 
 ---
 
 ## Stato Verifiche e Collaudo
-- **Unit Test (Vitest)**: **62/62 test superati** (14 auth, 14 segnalazioni, 10 guardie di sicurezza DB, 5 rate-limiter, 5 email-transport, 11 mime-validator strutturale, 3 storage-provider).
-- **Integrazione DB Aiven (MySQL live)**: **21/21 test superati** su `la_nostra_citta_test` (6 auth-db, 7 segnalazioni-db, 8 uploads-db con test proprietà/isolamento/pulizia senza svuotamento globale DB).
-- **Flusso Completo di Dominio (Script E2E su DB Aiven)**: **12/12 step superati** (`npm run test:e2e:auth`).
-- **Collaudo Browser / UI**:
-  - Registrazione, blocco pre-verifica, verifica email senza consumo su GET, conferma form, login, attributi cookie di sessione e logout: **SUPERATI** dall'operatore.
-  - Reset password nel browser: **NON ESEGUITO** (dichiarato esplicitamente per scelta dell'operatore; coperto a livello di dominio ed E2E script).
-  - Form Nuova Segnalazione con Upload fisico e invio atomico: predisposto e servito su localhost:3001 via endpoint `/api/uploads`.
-- **TypeScript**: **0 errori** (`tsc --noEmit`).
-- **ESLint**: **0 errori e 0 warning** (`npm run lint`).
-- **Build Next.js**: produzione ottimizzata completata con successo (`npm run build`).
-- **Prisma Schema**: valido per provider `mysql`.
 
+| Suite di Verifica | Obiettivo / Test Coperti | Esito Reale |
+| :--- | :--- | :--- |
+| **Unit Test (Vitest)** | 14 auth, 14 segnalazioni, 10 guardie DB, 5 rate-limiter, 5 email-transport, 11 mime-validator, 3 storage-provider | **62/62 SUPERATI (100%)** |
+| **Integrazione DB Aiven** | MySQL InnoDB su `la_nostra_citta_test`: 6 auth-db, 7 segnalazioni-db, 8 uploads-db, 11 fase4-community (**T05, T06, T11, T12, T13**) | **32/32 SUPERATI (100%)** |
+| **E2E Auth Script** | Ciclo end-to-end su Aiven: registrazione, verifica, login, cambio password e revoca sessioni | **12/12 SUPERATI (100%)** |
+| **TypeScript Typecheck** | `tsc --noEmit` su intero progetto | **0 ERRORI** |
+| **ESLint** | Regole Next.js e TypeScript | **0 ERRORI, 0 WARNING** |
+| **Build Produzione** | `next build` Turbopack | **16 ROUTE PRONTE** |
+
+---
+
+## Limiti Aperti e Funzionalità Non Implementate (Dichiarati Esplicitamente)
+
+1. **Collaudo Manuale Upload**: implementato a livello di endpoint, validazione, storage e test automatici DB; il collaudo manuale tramite form browser resta **rinviato alla fine per scelta dell'operatore** e non blocca la Fase 4.
+2. **Moderazione IA (Fase 5)**: rigorosamente **SOSPESA**. Nessun modello esterno o servizio a pagamento è stato attivato.
+3. **Predisposizione Storage S3**: solo architetturale via interfaccia `StorageProvider`. Nessun adapter S3 sviluppato.
+4. **Worker di Retry Asincrono**: i campi `tentativi` e `prossimo_tentativo_il` in `Outbox` e `AnalisiIa` sono predisposizioni di schema.
+5. **Rimozione Media**: la cancellazione dei singoli media da segnalazioni pubblicate è non implementata nel dominio per tutelare l'integrità probatoria.

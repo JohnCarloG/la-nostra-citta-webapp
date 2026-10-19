@@ -1,30 +1,32 @@
 # Matrice dei Gap (GAP_MATRIX)
 
-| Requisito | Evidenza file | Stato | Intervento | Test |
-|-----------|---------------|-------|------------|------|
-| RF01 | Nessuno | Mancante | Implementare registrazione, auth e profilo | T01 |
-| RF02 | Nessuno | Mancante | Implementare verifica email e token | T01, T02 |
-| RF03 | Nessuno | Mancante | Implementare ruoli server-side (COMITATO) | T02 |
-| RF04 | Nessuno | Mancante | Implementare upload file e validazione form | T03, T04 |
-| RF05 | `schema.prisma`, `segnalazioni.ts` | Impl. (Non Verificato) | Implementare stati (RICEVUTA, etc) e storico | T06 (Bloccato DB) |
-| RF06 | `schema.prisma`, `segnalazioni.ts` | Impl. (Non Verificato) | Implementare sostegno e classifica | T05, T13 (Bloccato DB) |
-| RF07 | Nessuno | Mancante | Implementare moderazione NLP all'invio | T07 |
-| RF08 | Nessuno | Mancante | Implementare classificazione automatica e catalogo | T08 |
-| RF09 | Nessuno | Mancante | Implementare estrazione EXIF e mappa interattiva | T04 |
-| RF10 | Nessuno | Mancante | Implementare verifica coerenza media/descrizione | T09 |
-| RF11 | Nessuno | Mancante | Implementare coda supervisione per COMITATO | T06 |
-| RF12 | `schema.prisma` | Impl. (Non Verificato) | Implementare audit log server-side | T11 (Bloccato DB) |
-| RF13 | Nessuno | Mancante | Implementare export CSV | T18 |
-| RF14 | Nessuno | Mancante | Implementare recupero psw, logout, sospensione | T01, T02 |
-| VI01 | `schema.prisma` | Impl. (Non Verificato) | Creare schema DB con FK adeguate | T05 (Bloccato DB) |
-| VI02 | `schema.prisma` | Impl. (Non Verificato) | Vincoli UNIQUE su DB, psw hash obbligatorio | T01 |
-| VI03 | `schema.prisma`, `segnalazioni.ts` | Impl. (Non Verificato) | PK composta su sostegni, check ruolo attivo | T05 (Bloccato DB) |
-| VI04 | `segnalazioni.ts` | Impl. (Non Verificato) | Validazione presenza media per segnalazione (Servizio)| T03 (Bloccato DB) |
-| VI05 | Nessuno | Mancante | Check validità coordinate geografiche | T04 |
-| VI06 | Nessuno | Mancante | Implementare filtri visibilità API/UI | T12 |
-| VI07 | `segnalazioni.ts` | Impl. (Non Verificato) | Transazioni DB per cambi stato e concorrenza | T06 (Bloccato DB) |
-| VI08 | `schema.prisma` | Impl. (Non Verificato) | Controllo hash/revisione risultati IA | T10 |
-| VI09 | `schema.prisma` | Impl. (Non Verificato) | Impedire cascata su delete (Restrict) | T11 |
-| VI10 | Nessuno | Mancante | Sicurezza storage pubblico/privato e no EXIF | T12 |
-| VI11 | `schema.prisma` | Impl. (Non Verificato) | Timestamp UTC gestiti da DB/Server | T11 |
-| VI12 | `schema.prisma` | Impl. (Non Verificato) | Codici univoci per categorie e gestione IA | T08 |
+Questo documento traccia la corrispondenza tra i requisiti formali di specifica, l'evidenza nel codice, lo stato di avanzamento e i test associati, distinguendo tra implementazione, test automatici e prove manuali.
+
+| Requisito | Evidenza file | Stato | Intervento / Note | Test Associati |
+|-----------|---------------|-------|-------------------|----------------|
+| **RF01** | `src/lib/domain/auth.ts`, `src/actions/auth.ts`, `/register`, `/login` | **Implementato e Verificato** | Registrazione con password hash bcrypt, login con rate-limiter scorrevole e sessioni DB con token SHA-256. | Unit Vitest, Integrazione `auth-db.test.ts` (T01), E2E script (12/12 step), Prova manuale browser. |
+| **RF02** | `src/lib/domain/auth.ts`, `/verify`, `/resend-verification` | **Implementato e Verificato** | Verifica email a token monouso, consumo atomico transazionale anti race-condition, reinvio con revoca token precedenti. | Unit Vitest, Integrazione `auth-db.test.ts` (T01, T02), Prova manuale browser link e form. |
+| **RF03** | `src/lib/domain/auth.ts`, `src/lib/domain/segnalazioni.ts`, `/comitato` | **Implementato e Verificato** | Ruoli server-side `CITTADINO`/`COMITATO`, blocco client-side payload escalation, autorizzazione per oggetto e azione. | Unit Vitest, Integrazione `auth-db.test.ts`, `fase4-community.test.ts` (T02, T06). |
+| **RF04** | `src/lib/domain/uploads.ts`, `src/lib/storage/`, `/api/uploads` | **Implementato e Verificato** (Test DB) | Validazione strutturale MIME e magic bytes, chunk MP4/JPEG/PNG/WebP, storage locale privato, consumo atomico. Collaudo manuale rinviato per scelta operatore. | Unit `mime-validator.test.ts` (11 test), `uploads-db.test.ts` (8 test) (T03, T04). |
+| **RF05** | `src/lib/domain/segnalazioni.ts`, `src/app/segnalazioni/`, `/comitato` | **Implementato e Verificato** | Ciclo di vita: RICEVUTA -> PRESA_IN_CARICO -> INVIATA_AI_CANDIDATI e RITIRATA. Eventi stato e audit atomici nella stessa transazione. | Integrazione `fase4-community.test.ts` (T06), `segnalazioni-db.test.ts`. |
+| **RF06** | `src/lib/domain/segnalazioni.ts`, `src/app/classifica/`, `sostegno-button.tsx` | **Implementato e Verificato** | Sostegno idempotente, divieto autosostegno, revoca idempotente, classifica aggregata con spareggio deterministico e conteggio solo profili attivi e verificati. | Integrazione `fase4-community.test.ts` (T05, T13), `segnalazioni-db.test.ts`. |
+| **RF07** | Non attivo | **Sospeso (Fase 5)** | Moderazione NLP all'invio. Nessuna chiamata esterna o costo attivato in Fase 4 per vincolo esplicito. | T07 (Previsto Fase 5). |
+| **RF08** | `src/lib/domain/segnalazioni.ts`, `src/app/(dashboard)/comitato/` | **Implementato e Verificato** (Catalogo Umano) | Tassonomia controllata a catalogo (`Categoria`), assegnazione categorie confermate dal comitato. Suggerimenti IA separati sospesi per Fase 5. | Integrazione `fase4-community.test.ts` (T08 catalogo). |
+| **RF09** | `src/app/mappa/`, `src/app/mappa/map-view.tsx` | **Implementato e Verificato** | Geolocalizzazione, coordinate obbligatorie e alternativa testuale pienamente accessibile (tabella e lista navigabile da tastiera/screen reader). | Integrazione `fase4-community.test.ts`, UI manuale (T04, T16). |
+| **RF10** | Non attivo | **Sospeso (Fase 5)** | Verifica automatica coerenza immagine/descrizione tramite IA. Sospesa per Fase 5. | T09 (Previsto Fase 5). |
+| **RF11** | `src/app/(dashboard)/comitato/page.tsx`, `comitato-actions-form.tsx` | **Implementato e Verificato** | Coda revisioni (PENDENTE/IN_REVISIONE), approvazione/rifiuto motivati, avanzamento, gestione categorie confermate e protezione concorrenza. | Integrazione `fase4-community.test.ts` (T06). |
+| **RF12** | `src/lib/domain/segnalazioni.ts`, `prisma/schema.prisma` | **Implementato e Verificato** | Audit log server-side append-only per inserimenti, sostegni, rimozioni, decisioni di moderazione e cambi stato. Nessun token o password nei log. | Integrazione `fase4-community.test.ts` (T11), `segnalazioni-db.test.ts`. |
+| **RF13** | Non attivo | **Pianificato (Fase 6)** | Esportazione dossier CSV sicuro e versione stampabile. | T18 (Previsto Fase 6). |
+| **RF14** | `src/lib/domain/auth.ts`, `src/actions/auth.ts` | **Implementato e Verificato** | Reset password con revoca immediata sessioni, logout esplicito, sospensione dinamica account senza cancellazione storico. | Unit Vitest, Integrazione `auth-db.test.ts` (T01, T02), E2E script. |
+| **VI01** | `prisma/schema.prisma` | **Implementato e Verificato** | FK con vincoli di integrità referenziale `ON DELETE RESTRICT` su MySQL InnoDB. | Integrazione DB Aiven (T05, T11). |
+| **VI02** | `prisma/schema.prisma` | **Implementato e Verificato** | UNIQUE su email_normalizzata, password_hash non nullo, domini chiusi per ruoli e stati. | Integrazione DB Aiven (T01). |
+| **VI03** | `prisma/schema.prisma`, `src/lib/domain/segnalazioni.ts` | **Implementato e Verificato** | PK composta su Sostegno (`utente_id`, `segnalazione_id`), divieto autosostegno e verifica account attivo/verificato in transazione. | Integrazione `fase4-community.test.ts` (T05). |
+| **VI04** | `src/lib/domain/segnalazioni.ts` | **Implementato e Verificato** | Cardinalità minima media (>= 1 media valido e non scaduto) garantita transazionalmente. | Unit Vitest, Integrazione `segnalazioni-db.test.ts` (T03). |
+| **VI05** | `src/lib/domain/segnalazioni.ts` | **Implementato e Verificato** | Vincolo latitudine (-90..90) e longitudine (-180..180). | Unit Vitest (T04). |
+| **VI06** | `src/lib/domain/segnalazioni.ts`, `/api/media/[id]` | **Implementato e Verificato** | Policy unificata: visibile solo se APPROVATA e non RITIRATA. Applicata a elenchi, dettaglio, mappa, classifica e media endpoint protetto. | Integrazione `fase4-community.test.ts` (T12). |
+| **VI07** | `src/lib/domain/segnalazioni.ts` | **Implementato e Verificato** | Stato corrente e storico aggiornati nella stessa transazione con lock esclusivo `FOR UPDATE` e controllo ottimistico di versione/stato. | Integrazione `fase4-community.test.ts` (T06). |
+| **VI08** | `prisma/schema.prisma` | **Pianificato (Fase 5)** | Hash e revisione risultati IA. Struttura predisposta a schema. | T10 (Previsto Fase 5). |
+| **VI09** | `prisma/schema.prisma`, `tests/helpers/test-db.ts` | **Implementato e Verificato** | Divieto di cancellazione a cascata (`RESTRICT`) su fatti storici, utenti e audit. Garbage collection controllata su temporanei. | Integrazione `segnalazioni-db.test.ts`, `uploads-db.test.ts` (T11). |
+| **VI10** | `src/lib/storage/`, `/api/media/[id]` | **Implementato e Verificato** | Storage privato non esposto pubblicamente; media streaming verificato su autorizzazioni; rimozione coordinate probatorie e chiavi casuali. | Unit e Integrazione `uploads-db.test.ts`, `fase4-community.test.ts` (T12). |
+| **VI11** | `src/lib/domain/` | **Implementato e Verificato** | Timestamp UTC gestiti server-side e vincoli `chk_audit_attore` e `chk_evento_attore` attivi. | Integrazione `segnalazioni-db.test.ts`, `fase4-community.test.ts` (T11). |
+| **VI12** | `src/lib/domain/segnalazioni.ts` | **Implementato e Verificato** | Categorie confermate univoche, catalogo con codice univoco, nessuna sovrascrittura automatica non autorizzata. | Integrazione `fase4-community.test.ts` (T08 catalogo). |

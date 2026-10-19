@@ -1,4 +1,4 @@
-﻿# Registro Verifiche Tecniche e Collaudo
+# Registro Verifiche Tecniche e Collaudo
 
 Questo registro documenta gli esiti reali e riproducibili delle verifiche eseguite sulla codebase, confrontando le evidenze dei comandi eseguiti con i requisiti di specifica.
 
@@ -12,9 +12,9 @@ Questo registro documenta gli esiti reali e riproducibili delle verifiche esegui
 | **Prisma Generate** | `npx prisma generate` | **SUPERATO (0 errori)** | Prisma Client v5.22.0 generato e allineato ai tipi di runtime. |
 | **Compilazione TypeScript** | `npx tsc --noEmit` | **SUPERATO (0 errori)** | Zero errori di tipo su Server Actions, pagine, script diagnostici e test. |
 | **Linting ESLint** | `npm run lint` | **SUPERATO (0 errori, 0 warning)** | Conforme alle regole ESLint Next.js e React. |
-| **Build Next.js** | `npm run build` | **SUPERATO (0 errori)** | Build di produzione Turbopack completata con successo: 8 route pronte (`/`, `/dashboard`, `/login`, `/register`, `/verify`, `/reset-password`, `/reset-password/confirm`, `/resend-verification`). Include form di caricamento allegati e Server Actions di upload. |
+| **Build Next.js** | `npm run build` | **SUPERATO (0 errori)** | Build di produzione Turbopack completata con successo: 16 route pronte (`/`, `/segnalazioni`, `/segnalazioni/[id]`, `/classifica`, `/mappa`, `/comitato`, `/dashboard`, `/login`, `/register`, `/verify`, `/reset-password`, `/reset-password/confirm`, `/resend-verification`, `/api/media/[id]`, `/api/uploads`, `/_not-found`). |
 | **Unit Testing (Vitest)** | `npm run test:unit` | **SUPERATO (62/62 test passati)** | 14 test auth, 14 test segnalazioni, 10 test guardie DB, 5 test rate-limiter, 5 test email-transport, 11 test mime-validator strutturale (magic bytes JPEG/PNG/WebP/MP4 + verifica chunk/segmenti, EXIF malformato, limiti 10MiB/50MiB), 3 test storage provider privato su disco. |
-| **Integrazione DB Aiven** | `npm run test:integration` | **SUPERATO SU AIVEN (21/21 test passati)** | Esecuzione sequenziale su `la_nostra_citta_test`: 6 test auth-db, 7 test segnalazioni-db (FK composta Media/AnalisiIa, vincoli CHECK, rollback), 8 test uploads-db (upload fisico su storage privato, blocco non verificati, rifiuto MIME fake, flusso completo con Media READY e UploadTemporaneo CONSUMATO, cleanup garbage collection di record scaduti e file orfani, isolamento storage di test). |
+| **Integrazione DB Aiven** | `npm run test:integration` | **SUPERATO SU AIVEN (32/32 test passati)** | Esecuzione sequenziale su `la_nostra_citta_test`: 6 test auth-db, 7 test segnalazioni-db, 8 test uploads-db, 11 test fase4-community (T05 sostegno/autosostegno/revoca idempotente/sospesi, T06 transizioni/eventi atomici/concorrenza ottimistica FOR UPDATE, T11 tracciabilità audit, T12 visibilità autorizzata e riservatezza media, T13 classifica deterministica fixture A=2, B=2, C=0, D nascosta). |
 | **Script Diagnostico Read-Only** | `npm run verify:db` | **SUPERATO SU AIVEN (LIVE)** | Connessione stabilita con successo su Aiven MySQL 8.4.11 (`ECDHE-RSA-AES256-GCM-SHA384`). Database attivo: `la_nostra_citta_test`. 17 tabelle verificate (16 di dominio + `_prisma_migrations`), 7 vincoli `CHECK` attivi, Foreign Key composta attiva con `ON DELETE RESTRICT ON UPDATE RESTRICT`. |
 | **Applicazione Migrazioni Protetta** | `npm run migrate:test` | **SUPERATO SU AIVEN (LIVE)** | `20261006000000_init_mysql` applicata e registrata come applied. Allineamento DDL completato senza reset né db push. Nessuna migrazione pendente rimasta. |
 | **Script Collaudo E2E Autenticazione** | `npm run test:e2e:auth` | **SUPERATO SU AIVEN (12/12 step)** | Ciclo completo end-to-end eseguito live: registrazione -> blocco login pre-verifica -> recupero token da email -> verifica email atomica -> login -> verifica sessione -> richiesta reset -> cambio password con revoca di tutte le sessioni -> rifiuto credenziali obsolete -> login nuova password -> logout esplicito e revoca. |
@@ -127,23 +127,39 @@ Nel collaudo sono formalmente distinti quattro livelli di verifica:
 
 ---
 
-## 5. Procedura Unica di Collaudo Aiven Eseguita con Successo
+## 5. Procedura di Collaudo Aiven Eseguita con Successo
 
 La sequenza eseguita con esito riproducibile:
 
 ```bash
-# 1. Compilazione del codice finale
+# 1. Compilazione del codice finale (16 route di produzione pronte)
 npm run build
 
-# 2. Diagnostica di sola lettura
+# 2. Diagnostica di sola lettura (connessione TLS strict e certificato verificati)
 npm run verify:db
 
 # 3. Test Unitari (62/62 superati)
 npm run test:unit
 
-# 4. Test Integrazione DB Aiven (21/21 superati su Aiven live)
+# 4. Test Integrazione DB Aiven (32/32 superati su Aiven live)
 npm run test:integration
 
 # 5. Flusso Auth completo End-to-End di dominio su Aiven (12/12 passaggi superati)
 npm run test:e2e:auth
 ```
+
+---
+
+## 6. Dettaglio Verifiche Fase 4 (Community, Supervisione, Visibilità e Classifica)
+
+### Distinzione: Implementazione, Test Automatici e Prove Manuali
+
+| Requisito / Ambito | Implementazione | Test Automatici (Vitest / DB Aiven) | Prove Manuali |
+| :--- | :--- | :--- | :--- |
+| **T05 (RF06, VI03)**: Sostegno, Autosostegno, Revoca Idempotente | `aggiungiSostegno`, `rimuoviSostegno` in `src/lib/domain/segnalazioni.ts`, gestione collisione concorrente `P2002` | **100% Superato (4/4 test)** in `fase4-community.test.ts`: richieste simultanee unificate, autosostegno bloccato, DELETE ripetuto con successo, sostenitori sospesi esclusi dal conteggio. | Componente `SostegnoButton` verificato con rendering dinamico e aggiornamento ottimistico. |
+| **T06 (RF05, VI07)**: Transizioni e Concorrenza Ottimistica | `moderaSegnalazione`, `avanzaStatoSegnalazione`, `ritiraSegnalazione` con lock di riga `FOR UPDATE` e controlli su `expectedRevision`/`expectedState` | **100% Superato (4/4 test)** in `fase4-community.test.ts`: transizioni vietate respinte, transizioni consentite atomiche con `EventoStato` e `AuditEvento`, due moderatori concorrenti (409 per il secondo), ritiro irreversibile. | Form operativo comitato `ComitatoActionsForm` integrato su `/comitato`. |
+| **T11 (RF12)**: Tracciabilità e Privacy nei Log | Append-only in `AuditEvento` e `EventoStato` in tutte le transizioni con attore UTENTE/SISTEMA | **100% Superato (1/1 test)** in `fase4-community.test.ts`: tracciate tutte le azioni, verifica assenza totale di token o hash password nei dati JSON. | Storico timeline visualizzato in `/segnalazioni/[id]` e `/comitato`. |
+| **T12 (VI06, VI10)**: Visibilità Condivisa e Media Protetti | `isSegnalazionePubblica`, endpoint `/api/media/[id]`, filtri su dettaglio, mappa, classifica | **100% Superato (1/1 test)** in `fase4-community.test.ts`: report pendenti/ritirati invisibili a terzi e anonimi; visibili unicamente ad autore e comitato. Storage fisico `.private_storage` mai esposto. | Prove di navigazione su schede pubbliche e private. |
+| **T13 (RF06)**: Classifica Deterministica | Query aggregata diretta conforme a `04_MODELLO_LOGICO.md` con spareggio `sostegni_validi DESC, creata_il ASC, id ASC` | **100% Superato (1/1 test)** in `fase4-community.test.ts`: Fixture A=2, B=2, C=0, D nascosta (10 voti); A al #1 per spareggio data, B al #2, C al #3 con 0 voti, D rigorosamente esclusa. Categorie e media multipli non duplicano i voti. | Pagina `/classifica` renderizzata con podio e filtri. |
+| **Mappa & Alternativa Testuale (RF09, T16)** | `/mappa` con `MapView`, layer geografico e tab accessibile | **Verificato con build Next.js e test dati** | Switcher accessibile Mappa vs Tabella testuale con coordinate precise e attributi ARIA. |
+| **Collaudo Manuale Upload (Fase 3)** | Endpoint `/api/uploads` e validazione MIME | Test di integrazione DB superati (`uploads-db.test.ts`) | **RINVIATO alla fine** per scelta dell'operatore (non bloccante per Fase 4). |

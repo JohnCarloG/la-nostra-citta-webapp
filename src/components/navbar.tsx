@@ -1,112 +1,88 @@
 import Link from 'next/link';
 import { getCurrentUser } from '@/actions/auth';
 import LogoutButton from '@/app/(dashboard)/dashboard/logout-button';
+import { DesktopNavLinks, MobileNavLinks } from './nav-links';
 
 export default async function Navbar() {
   const user = await getCurrentUser();
+  const isComitato = user?.ruolo === 'COMITATO';
 
   return (
-    <header className="border-b border-[var(--border-light)] bg-white sticky top-0 z-50">
-      {/* Barra superiore di contesto istituzionale */}
-      <div className="bg-[var(--bg-subtle)] border-b border-[var(--border-light)] text-xs text-[var(--text-secondary)] py-1.5">
-        <div className="page-container flex items-center justify-between">
-          <span>Iniziativa civica locale per la trasparenza e la cura del territorio</span>
-          <span className="hidden sm:inline">Consultazione partecipata prima delle elezioni</span>
-        </div>
-      </div>
-
-      {/* Testata principale */}
-      <div className="page-container py-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Identità del progetto */}
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex flex-col text-decoration-none group" aria-label="Home page La Nostra Città">
-              <span className="text-lg font-bold text-[var(--blue-primary)] tracking-tight leading-tight group-hover:underline">
-                La Nostra Città, Il Nostro Futuro
+    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[var(--border-light)] transition-all">
+      <div className="page-container">
+        <div className="flex items-center justify-between h-16 md:h-18 gap-3">
+          
+          {/* Identità del progetto con logo civico */}
+          <Link href="/" className="flex items-center gap-2.5 text-decoration-none group shrink-0" aria-label="Home page La Nostra Città">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--forest-800)] to-[var(--forest-600)] text-white flex items-center justify-center font-display font-extrabold text-sm shadow-sm group-hover:scale-105 transition-transform">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 21h18" />
+                <path d="M5 21V7l7-4 7 4v14" />
+                <path d="M9 10h1" />
+                <path d="M14 10h1" />
+                <path d="M9 14h1" />
+                <path d="M14 14h1" />
+                <path d="M9 18h1" />
+                <path d="M14 18h1" />
+              </svg>
+            </div>
+            <div className="flex flex-col">
+              <span className="font-display font-extrabold text-base md:text-lg text-[var(--forest-900)] leading-tight tracking-tight group-hover:text-[var(--forest-700)] transition-colors">
+                La Nostra Città
               </span>
-              <span className="text-xs text-[var(--text-secondary)]">
-                Piattaforma civica per le priorità urbane e la partecipazione territoriale
+              <span className="text-xs font-semibold text-[var(--forest-600)] tracking-wide uppercase">
+                Partecipazione Civica
               </span>
-            </Link>
-          </div>
+            </div>
+          </Link>
 
-          {/* Azioni rapide di testata */}
-          <div className="flex items-center gap-3 shrink-0 self-start md:self-auto">
+          {/* Navigazione centrale desktop: Home (prima voce), Esplora, Mappa, Priorità */}
+          <DesktopNavLinks isComitato={isComitato} />
+
+          {/* Accesso personale e pulsante "Segnala" */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {user ? (
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex items-center gap-2">
                 <Link
                   href="/dashboard"
-                  className="text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--blue-primary)] px-2 py-1 border border-[var(--border-medium)] rounded-[var(--radius-sm)]"
+                  className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[var(--forest-800)] bg-[var(--forest-light)] hover:bg-[var(--bg-subtle-tint)] px-3 py-1.5 rounded-full border border-[var(--forest-border)] transition-colors"
                 >
-                  Area personale ({user.nome})
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <span className="hidden sm:inline">Area personale:</span>
+                  <span className="font-bold truncate max-w-[100px]">{user.nome}</span>
                 </Link>
                 <LogoutButton />
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-sm">
-                <Link
-                  href="/login"
-                  className="text-xs font-semibold text-[var(--blue-primary)] hover:underline px-2.5 py-1"
-                >
-                  Accedi
-                </Link>
-                <Link
-                  href="/register"
-                  className="text-xs font-semibold text-[var(--text-secondary)] border border-[var(--border-medium)] rounded-[var(--radius-sm)] px-2.5 py-1 hover:bg-[var(--bg-subtle)]"
-                >
-                  Registrati
-                </Link>
-              </div>
+              <Link
+                href="/login"
+                className="text-xs sm:text-sm font-semibold text-[var(--forest-800)] hover:text-[var(--forest-600)] px-2.5 py-1.5 transition-colors"
+              >
+                Accedi
+              </Link>
             )}
 
+            {/* Pulsante primario: "Segnala" */}
             <Link
               href={user ? "/dashboard#nuova-segnalazione" : "/login?redirect=/dashboard"}
-              className="btn btn-primary btn-sm"
+              className="btn btn-accent btn-sm shadow-sm"
               id="header-invia-segnalazione"
             >
-              Invia una segnalazione
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span>Segnala</span>
             </Link>
           </div>
-        </div>
-      </div>
 
-      {/* Barra di navigazione stabile */}
-      <nav className="border-t border-[var(--border-light)] bg-white" aria-label="Menu principale">
-        <div className="page-container">
-          <ul className="flex items-center gap-6 overflow-x-auto py-2 text-sm font-medium list-none m-0 p-0">
-            <li>
-              <Link href="/segnalazioni" className="nav-link">
-                Segnalazioni
-              </Link>
-            </li>
-            <li>
-              <Link href="/mappa" className="nav-link">
-                Mappa
-              </Link>
-            </li>
-            <li>
-              <Link href="/classifica" className="nav-link">
-                Priorità
-              </Link>
-            </li>
-            <li>
-              <Link href="/#come-funziona" className="nav-link">
-                Come funziona
-              </Link>
-            </li>
-            {user?.ruolo === 'COMITATO' && (
-              <li className="ml-auto">
-                <Link
-                  href="/comitato"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded-[var(--radius-sm)] bg-[var(--warning-bg)] text-[var(--warning-text)] border border-[var(--warning-border)]"
-                >
-                  Area Comitato
-                </Link>
-              </li>
-            )}
-          </ul>
         </div>
-      </nav>
+
+        {/* Barra di navigazione mobile secondaria con Home come prima voce */}
+        <MobileNavLinks isComitato={isComitato} />
+      </div>
     </header>
   );
 }

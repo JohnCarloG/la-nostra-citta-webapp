@@ -4,6 +4,8 @@ import { getCurrentUser } from '@/actions/auth';
 import { getDettaglioSegnalazione } from '@/lib/domain/segnalazioni';
 import SostegnoButton from '@/components/sostegno-button';
 import RitiraButton from '@/components/ritira-button';
+import MediaPlaceholder from '@/components/media-placeholder';
+import ReportThumbnail from '@/components/report-thumbnail';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -132,37 +134,44 @@ export default async function SegnalazioneDetailPage({ params }: PageProps) {
         </div>
 
         {/* Allegati fotografici e documentali (se presenti) */}
-        {seg.media.length > 0 && (
-          <div>
-            <h2 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
-              Documentazione allegata ({seg.media.length})
-            </h2>
+        <div>
+          <h2 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
+            Documentazione allegata ({seg.media.length})
+          </h2>
+          {seg.media.length === 0 ? (
+            <div className="max-w-sm rounded-[var(--radius-sm)] overflow-hidden border border-[var(--border-medium)]">
+              <MediaPlaceholder className="w-full h-44" />
+            </div>
+          ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {seg.media.map((m) => (
                 <div
                   key={m.id}
-                  className="border border-[var(--border-medium)] rounded-[var(--radius-sm)] overflow-hidden bg-[var(--bg-subtle)] flex flex-col items-center justify-center p-2"
+                  className="border border-[var(--border-medium)] rounded-[var(--radius-sm)] overflow-hidden bg-[var(--bg-subtle)] flex flex-col items-center justify-between p-2"
                 >
                   {m.tipo === 'FOTO' ? (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={`/api/media/${m.id}`}
+                    <ReportThumbnail
+                      mediaId={m.id}
+                      tipo="FOTO"
                       alt="Allegato segnalazione documentato dal cittadino"
-                      className="max-h-56 w-auto object-contain rounded-[var(--radius-xs)]"
+                      className="relative w-full h-48 bg-transparent overflow-hidden rounded-[var(--radius-xs)] flex items-center justify-center"
+                      imgClassName="max-h-48 w-auto object-contain rounded-[var(--radius-xs)]"
                     />
                   ) : (
-                    <video controls src={`/api/media/${m.id}`} className="max-h-56 w-full rounded-[var(--radius-xs)]">
-                      Il tuo browser non supporta il tag video.
-                    </video>
+                    <div className="w-full">
+                      <video controls src={`/api/media/${m.id}`} className="max-h-48 w-full rounded-[var(--radius-xs)]">
+                        Il tuo browser non supporta il tag video.
+                      </video>
+                    </div>
                   )}
-                  <span className="text-[0.6875rem] text-[var(--text-muted)] mt-1.5">
+                  <span className="text-[0.6875rem] text-[var(--text-muted)] mt-1.5 text-center">
                     {m.tipo} &bull; {(m.byte_size / 1024).toFixed(0)} KB &bull; Accesso protetto
                   </span>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Localizzazione territoriale */}
         <div>

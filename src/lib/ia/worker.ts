@@ -38,6 +38,7 @@ export async function claimNextOutboxJob(): Promise<{
       FROM Outbox
       WHERE elaborata_il IS NULL
         AND (prossimo_tentativo_il IS NULL OR prossimo_tentativo_il <= NOW())
+        AND tipo_evento IN ('SEGNALAZIONE_CREATA', 'SEGNALAZIONE_MODIFICATA')
       ORDER BY creata_il ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED

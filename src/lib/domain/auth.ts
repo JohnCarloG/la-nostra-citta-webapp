@@ -1,6 +1,7 @@
 import { prisma } from '../db';
 import { generateSecureToken, hashPassword, verifyPassword, hashToken } from '../security';
-import { emailTransport } from '../email-transport';
+import { validaCodiceFiscale } from './codice-fiscale';
+import { accodaEmailOutbox, tentaInvioImmediatoOutbox } from '../email-outbox';
 
 /**
  * Normalizza l'email per evitare duplicati logici (es. test@email.com vs TEST@email.com)
@@ -9,26 +10,77 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+export interface RegistraCittadinoResult {
+  id: string;
+  nome: string;
+  cognome: string;
+  email_normalizzata: string;
+  ruolo: string;
+  stato_account: string;
+  verificato_il: Date | null;
+  quartiere_id: string | null;
+  creato_il: Date;
+  emailDelivered: boolean;
+  clearToken?: string;
+}
+
 /**
- * Registrazione Utente (Cittadino)
+ * Registrazione Utente (Cittadino) con Codice Fiscale, Quartiere e Outbox Email
  */
-export async function registraCittadino(nome: string, cognome: string, email: string, passwordInChiaro: string) {
+export async function registraCittadino(
+  nome: string,
+  cognome: string,
+  email: string,
+  passwordInChiaro: string,
+  codiceFiscale?: string,
+  quartiereId?: string
+): Promise<RegistraCittadinoResult> {
   const emailNorm = normalizeEmail(email);
 
-  const existing = await prisma.utente.findUnique({ where: { email_normalizzata: emailNorm } });
-  if (existing) throw new Error('Email già registrata');
+  let cfNorm: string | undefined = undefined;
+  if (codiceFiscale) {
+    const cfValidation = validaCodiceFiscale(codiceFiscale);
+    if (!cfValidation.valido || !cfValidation.cfNormalizzato) {
+      throw new Error(cfValidation.motivoErrore || 'Codice fiscale non valido');
+    }
+    cfNorm = cfValidation.cfNormalizzato;
+  }
+
+  if (quartiereId) {
+    const quartiere = await prisma.quartiere.findUnique({ where: { id: quartiereId } });
+    if (!quartiere) {
+      throw new Error('Il quartiere selezionato non è ammesso dal catalogo civico');
+    }
+  }
+
+  // Verifica duplicati
+  const existingEmail = await prisma.utente.findUnique({ where: { email_normalizzata: emailNorm } });
+  let existingCf: { id: string } | null = null;
+  if (cfNorm) {
+    existingCf = await prisma.utente.findFirst({ where: { codice_fiscale: cfNorm } });
+  }
+
+  if (existingEmail || existingCf) {
+    if (cfNorm) {
+      // Politica privacy: non rivelare se il conflitto è su email o codice fiscale
+      throw new Error('I dati inseriti non consentono la registrazione. Se possiedi già un account civico, accedi o richiedi il recupero credenziali.');
+    }
+    throw new Error('Email già registrata');
+  }
 
   const pwdHash = await hashPassword(passwordInChiaro);
 
-  const utente = await prisma.$transaction(async (tx) => {
-    const utenteDb = await tx.utente.create({
+  const { utenteDb, clearToken, outboxJobId } = await prisma.$transaction(async (tx) => {
+    const utente = await tx.utente.create({
       data: {
         nome,
         cognome,
         email_normalizzata: emailNorm,
         password_hash: pwdHash,
+        codice_fiscale: cfNorm || null,
+        quartiere_id: quartiereId || null,
         ruolo: 'CITTADINO',
-        stato_account: 'ATTIVO', // Non sospeso. DA_VERIFICARE si deduce da verificato_il == null
+        stato_account: 'ATTIVO',
       }
     });
 
@@ -38,25 +90,48 @@ export async function registraCittadino(nome: string, cognome: string, email: st
 
     await tx.tokenAccount.create({
       data: {
-        utente_id: utenteDb.id,
+        utente_id: utente.id,
         tipo: 'VERIFICA_EMAIL',
         token_hash: hash,
         scade_il: scadenza
       }
     });
-    
-    // Restituiamo sia l'utente che il token per l'invio email FUORI transazione
-    return { utente: utenteDb, clearToken: token };
+
+    // Registra Outbox job dentro la transazione
+    const outboxId = await accodaEmailOutbox({
+      tipo: 'VERIFICA_EMAIL',
+      to: emailNorm,
+      subject: 'Attivazione account civico - La Nostra Città',
+      body: `Gentile ${nome},\n\nGrazie per esserti registrato alla piattaforma civica "La Nostra Città, Il Nostro Futuro".\n\nPer attivare il tuo profilo civico e confermare il tuo indirizzo email, accedi al seguente link:\n${process.env.APP_URL || 'http://localhost:3000'}/verify?token=${token}\n\nOppure inserisci manualmente il tuo token di verifica:\n${token}\n\nIl token scade tra 24 ore.`,
+      token,
+      utente_id: utente.id
+    }, tx);
+
+    return { utenteDb: utente, clearToken: token, outboxJobId: outboxId };
   });
 
-  // Invio email tramite trasporto di sviluppo/test consultabile
-  await emailTransport.sendEmail(
-    utente.utente.email_normalizzata,
-    'Verifica Account',
-    `Il tuo token di verifica è: ${utente.clearToken}`,
-    utente.clearToken
-  );
-  return utente.utente;
+  // Consegna Outbox FUORI transazione DB aperta
+  let emailDelivered = false;
+  try {
+    const dispatch = await tentaInvioImmediatoOutbox(outboxJobId);
+    emailDelivered = dispatch.delivered;
+  } catch {
+    emailDelivered = false;
+  }
+
+  return {
+    id: utenteDb.id,
+    nome: utenteDb.nome,
+    cognome: utenteDb.cognome,
+    email_normalizzata: utenteDb.email_normalizzata,
+    ruolo: utenteDb.ruolo,
+    stato_account: utenteDb.stato_account,
+    verificato_il: utenteDb.verificato_il,
+    quartiere_id: utenteDb.quartiere_id,
+    creato_il: utenteDb.creato_il,
+    emailDelivered,
+    clearToken
+  };
 }
 
 /**
@@ -75,7 +150,7 @@ export async function reinviaVerificaEmail(email: string): Promise<boolean> {
   const scadenza = new Date();
   scadenza.setHours(scadenza.getHours() + 24);
 
-  await prisma.$transaction(async (tx) => {
+  const outboxJobId = await prisma.$transaction(async (tx) => {
     // Invalida token di verifica precedenti
     await tx.tokenAccount.updateMany({
       where: {
@@ -96,15 +171,60 @@ export async function reinviaVerificaEmail(email: string): Promise<boolean> {
         scade_il: scadenza
       }
     });
+
+    return accodaEmailOutbox({
+      tipo: 'VERIFICA_EMAIL',
+      to: utente.email_normalizzata,
+      subject: 'Nuovo Token di Verifica Account - La Nostra Città',
+      body: `Gentile ${utente.nome},\n\nEcco il tuo nuovo link per l'attivazione dell'account civico:\n${process.env.APP_URL || 'http://localhost:3000'}/verify?token=${token}\n\nOppure inserisci manualmente il tuo token:\n${token}\n\nIl token scade tra 24 ore.`,
+      token,
+      utente_id: utente.id
+    }, tx);
   });
 
-  await emailTransport.sendEmail(
-    utente.email_normalizzata,
-    'Nuovo Token di Verifica Account',
-    `Il tuo nuovo token di verifica è: ${token}`,
-    token
-  );
+  // Consegna fuori transazione
+  await tentaInvioImmediatoOutbox(outboxJobId);
   return true;
+}
+
+/**
+ * Completamento profilo per utenti esistenti (aggiunta retrocompatibile di CF e Quartiere)
+ */
+export async function completaProfiloUtente(
+  utenteId: string,
+  codiceFiscale: string,
+  quartiereId: string
+) {
+  const cfValidation = validaCodiceFiscale(codiceFiscale);
+  if (!cfValidation.valido || !cfValidation.cfNormalizzato) {
+    throw new Error(cfValidation.motivoErrore || 'Codice fiscale non valido');
+  }
+  const cfNorm = cfValidation.cfNormalizzato;
+
+  const quartiere = await prisma.quartiere.findUnique({ where: { id: quartiereId } });
+  if (!quartiere) {
+    throw new Error('Il quartiere selezionato non è ammesso dal catalogo civico');
+  }
+
+  // Verifica che il CF non sia già in uso da un altro utente
+  const existingCf = await prisma.utente.findFirst({
+    where: {
+      codice_fiscale: cfNorm,
+      NOT: { id: utenteId }
+    }
+  });
+
+  if (existingCf) {
+    throw new Error('I dati inseriti non consentono l\'aggiornamento del profilo.');
+  }
+
+  return prisma.utente.update({
+    where: { id: utenteId },
+    data: {
+      codice_fiscale: cfNorm,
+      quartiere_id: quartiereId
+    }
+  });
 }
 
 /**
@@ -202,22 +322,28 @@ export async function richiediResetPassword(email: string) {
   const scadenza = new Date();
   scadenza.setHours(scadenza.getHours() + 1); // 1 ora
 
-  await prisma.tokenAccount.create({
-    data: {
-      utente_id: utente.id,
+  const outboxJobId = await prisma.$transaction(async (tx) => {
+    await tx.tokenAccount.create({
+      data: {
+        utente_id: utente.id,
+        tipo: 'RESET_PASSWORD',
+        token_hash: hash,
+        scade_il: scadenza
+      }
+    });
+
+    return accodaEmailOutbox({
       tipo: 'RESET_PASSWORD',
-      token_hash: hash,
-      scade_il: scadenza
-    }
+      to: utente.email_normalizzata,
+      subject: 'Recupero Credenziali - La Nostra Città',
+      body: `Gentile ${utente.nome},\n\nAbbiamo ricevuto una richiesta di recupero credenziali per il tuo account civico.\nIl tuo token di reset è:\n${token}`,
+      token,
+      utente_id: utente.id
+    }, tx);
   });
 
-  // Fuori transazione (essendo solo un insert singolo, l'await sopra va bene)
-  await emailTransport.sendEmail(
-    utente.email_normalizzata,
-    'Reset Password',
-    `Il tuo token di reset è: ${token}`,
-    token
-  );
+  // Consegna fuori transazione
+  await tentaInvioImmediatoOutbox(outboxJobId);
 }
 
 /**
@@ -288,7 +414,16 @@ export async function getSessionUtente(sessionTokenInChiaro: string) {
           ruolo: true,
           stato_account: true,
           verificato_il: true,
+          codice_fiscale: true,
           quartiere_id: true,
+          quartiere: {
+            select: {
+              id: true,
+              nome: true,
+              codice: true,
+              is_ufficiale: true,
+            }
+          },
           creato_il: true
         }
       }

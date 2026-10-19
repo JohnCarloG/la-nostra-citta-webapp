@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { emailTransport } from '../../src/lib/email-transport';
+import { emailTransport, parseSmtpSecure } from '../../src/lib/email-transport';
 
 describe('DevelopmentEmailTransport (In-Memory)', () => {
   beforeEach(() => {
@@ -36,15 +36,18 @@ describe('DevelopmentEmailTransport (In-Memory)', () => {
     const msgVerifica = emailTransport.getMessages()[0];
     const msgReset = emailTransport.getMessages()[1];
 
-    expect(msgVerifica.link).toBe('http://localhost:3001/verify?token=tok-ver-123');
-    expect(msgReset.link).toBe('http://localhost:3001/reset-password/confirm?token=tok-res-456');
+    const baseUrl = process.env.APP_URL || 'http://localhost:3001';
+    expect(msgVerifica.link).toBe(`${baseUrl}/verify?token=tok-ver-123`);
+    expect(msgReset.link).toBe(`${baseUrl}/reset-password/confirm?token=tok-res-456`);
   });
 
-  it('Cancella la cronologia con clear()', async () => {
-    await emailTransport.sendEmail('test@example.com', 'Oggetto', 'Messaggio');
-    expect(emailTransport.getMessages()).toHaveLength(1);
-
-    emailTransport.clear();
-    expect(emailTransport.getMessages()).toHaveLength(0);
+  it('Interpreta SMTP_SECURE come booleano esplicito ("false" non diventa true su porta 465)', () => {
+    expect(parseSmtpSecure('false', 465)).toBe(false);
+    expect(parseSmtpSecure('0', 465)).toBe(false);
+    expect(parseSmtpSecure('no', 465)).toBe(false);
+    expect(parseSmtpSecure('true', 587)).toBe(true);
+    expect(parseSmtpSecure('1', 587)).toBe(true);
+    expect(parseSmtpSecure(undefined, 465)).toBe(true);
+    expect(parseSmtpSecure(undefined, 587)).toBe(false);
   });
 });

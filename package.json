@@ -15,12 +15,15 @@
     "migrate:test": "tsx scripts/deploy-migrations.ts",
     "test:e2e:auth": "tsx scripts/test-auth-e2e.ts",
     "start:test": "tsx scripts/start-test-server.ts",
-    "cleanup:uploads": "tsx scripts/cleanup-uploads.ts"
+    "cleanup:uploads": "tsx scripts/cleanup-uploads.ts",
+    "smtp:check": "tsx --env-file=.env.local scripts/smtp-check.ts",
+    "worker:email": "tsx --env-file=.env.local scripts/email-worker.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",
     "next": "16.3.8",
+    "nodemailer": "^10.1.7",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -28,6 +31,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^26.6.4",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

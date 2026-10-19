@@ -8,9 +8,11 @@ datasource db {
 }
 
 model Quartiere {
-  id     String   @id @default(uuid()) @db.VarChar(36)
-  nome   String   @unique @db.VarChar(191)
-  utenti Utente[]
+  id           String   @id @default(uuid()) @db.VarChar(36)
+  codice       String?  @unique @db.VarChar(50)
+  nome         String   @unique @db.VarChar(191)
+  is_ufficiale Boolean  @default(true)
+  utenti       Utente[]
 }
 
 enum RuoloUtente {
@@ -33,6 +35,7 @@ model Utente {
   ruolo              RuoloUtente  @default(CITTADINO)
   stato_account      StatoAccount @default(ATTIVO)
   quartiere_id       String?      @db.VarChar(36)
+  codice_fiscale     String?      @unique(map: "Utente_codice_fiscale_key") @db.VarChar(16)
   creato_il          DateTime     @default(now())
 
   quartiere         Quartiere?             @relation(fields: [quartiere_id], references: [id], onDelete: Restrict)
@@ -304,8 +307,8 @@ model Sessione {
 
 model Outbox {
   id                    String    @id @default(uuid()) @db.VarChar(36)
-  segnalazione_id       String    @db.VarChar(36)
-  revisione             Int
+  segnalazione_id       String?   @db.VarChar(36)
+  revisione             Int       @default(1)
   tipo_evento           String    @db.VarChar(100)
   payload_json          String    @db.Text
   creata_il             DateTime  @default(now())
@@ -313,9 +316,10 @@ model Outbox {
   tentativi             Int       @default(0)
   prossimo_tentativo_il DateTime?
 
-  segnalazione Segnalazione @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
+  segnalazione Segnalazione? @relation(fields: [segnalazione_id], references: [id], onDelete: Restrict)
 
   @@unique([segnalazione_id, revisione, tipo_evento])
+  @@index([tipo_evento])
   @@index([elaborata_il, prossimo_tentativo_il])
 }
 

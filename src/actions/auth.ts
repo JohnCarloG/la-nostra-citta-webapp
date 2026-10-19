@@ -9,8 +9,10 @@ import {
   richiediResetPassword as domainRichiediResetPassword,
   eseguiResetPassword as domainEseguiResetPassword,
   reinviaVerificaEmail as domainReinviaVerificaEmail,
-  getSessionUtente
+  getSessionUtente,
+  completaProfiloUtente
 } from '@/lib/domain/auth';
+import { validaCodiceFiscale } from '@/lib/domain/codice-fiscale';
 import { authRateLimiter, resetPasswordRateLimiter } from '@/lib/rate-limiter';
 
 /**
@@ -67,9 +69,11 @@ export async function registerAction(formData: FormData) {
   const cognome = (formData.get('cognome') as string)?.trim();
   const email = (formData.get('email') as string)?.trim().toLowerCase();
   const password = formData.get('password') as string;
+  const codiceFiscale = (formData.get('codice_fiscale') as string)?.trim();
+  const quartiereId = (formData.get('quartiere_id') as string)?.trim();
 
-  if (!nome || !cognome || !email || !password) {
-    return { error: 'Tutti i campi sono obbligatori' };
+  if (!nome || !cognome || !email || !password || !codiceFiscale || !quartiereId) {
+    return { error: 'Tutti i campi contrassegnati da asterisco sono obbligatori, inclusi codice fiscale e quartiere di residenza.' };
   }
 
   if (!isValidEmail(email)) {
@@ -80,6 +84,11 @@ export async function registerAction(formData: FormData) {
     return { error: 'La password deve contenere almeno 8 caratteri' };
   }
 
+  const cfCheck = validaCodiceFiscale(codiceFiscale);
+  if (!cfCheck.valido || !cfCheck.cfNormalizzato) {
+    return { error: cfCheck.motivoErrore || 'Codice fiscale non valido' };
+  }
+
   const limit = authRateLimiter.check(`register:${email}`);
   if (!limit.allowed) {
     return { 
@@ -88,7 +97,49 @@ export async function registerAction(formData: FormData) {
   }
 
   try {
-    await registraCittadino(nome, cognome, email, password);
+    const res = await registraCittadino(
+      nome,
+      cognome,
+      email,
+      password,
+      cfCheck.cfNormalizzato,
+      quartiereId
+    );
+    return { 
+      success: true, 
+      emailDelivered: Boolean(res.emailDelivered),
+      message: res.emailDelivered
+        ? 'Registrazione completata: l\'email di verifica è stata accettata dal server SMTP per la consegna.'
+        : 'Registrazione completata: Email di verifica in attesa di invio.'
+    };
+  } catch (err: unknown) {
+    return { error: (err as Error).message };
+  }
+}
+
+/**
+ * Server Action per Completamento Profilo Utenti Esistenti
+ */
+export async function completaProfiloAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { error: 'Sessione non valida o scaduta. Effettua nuovamente l\'accesso.' };
+  }
+
+  const codiceFiscale = (formData.get('codice_fiscale') as string)?.trim();
+  const quartiereId = (formData.get('quartiere_id') as string)?.trim();
+
+  if (!codiceFiscale || !quartiereId) {
+    return { error: 'Codice fiscale e quartiere di residenza sono entrambi obbligatori per completare il profilo.' };
+  }
+
+  const cfCheck = validaCodiceFiscale(codiceFiscale);
+  if (!cfCheck.valido || !cfCheck.cfNormalizzato) {
+    return { error: cfCheck.motivoErrore || 'Codice fiscale non valido' };
+  }
+
+  try {
+    await completaProfiloUtente(user.id, cfCheck.cfNormalizzato, quartiereId);
     return { success: true };
   } catch (err: unknown) {
     return { error: (err as Error).message };

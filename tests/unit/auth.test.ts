@@ -8,6 +8,7 @@ vi.mock('@prisma/client', () => {
   const mPrisma = {
     utente: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn()
     },
@@ -21,6 +22,25 @@ vi.mock('@prisma/client', () => {
       create: vi.fn(),
       findFirst: vi.fn(),
       updateMany: vi.fn()
+    },
+    quartiere: {
+      findUnique: vi.fn(),
+      findMany: vi.fn()
+    },
+    outbox: {
+      create: vi.fn().mockResolvedValue({ id: 'mock-outbox-id-1' }),
+      findUnique: vi.fn().mockResolvedValue({
+        id: 'mock-outbox-id-1',
+        payload_json: JSON.stringify({
+          tipo: 'VERIFICA_EMAIL',
+          to: 'test@email.com',
+          subject: 'Verifica',
+          body: 'body',
+          token: 'token123'
+        }),
+        tentativi: 0
+      }),
+      update: vi.fn().mockResolvedValue({})
     },
     $transaction: vi.fn(async (cb) => cb(mPrisma))
   };
@@ -203,6 +223,7 @@ describe('Flussi di Autenticazione e Autorizzazione (Funzioni Pure/Mock)', () =>
     it('Genera nuovo token e ritorna true per utente attivo non verificato', async () => {
       prisma.utente.findUnique.mockResolvedValue({
         id: 'u-non-verificato',
+        nome: 'Mario',
         email_normalizzata: 'da.verificare@example.com',
         stato_account: 'ATTIVO',
         verificato_il: null
@@ -217,6 +238,102 @@ describe('Flussi di Autenticazione e Autorizzazione (Funzioni Pure/Mock)', () =>
           utente_id: 'u-non-verificato',
           tipo: 'VERIFICA_EMAIL'
         })
+      });
+    });
+  });
+
+  describe('Codice Fiscale e Quartiere (Registrazione e Completamento Profilo)', () => {
+    it('Registrazione accetta codice fiscale valido e quartiere ammesso', async () => {
+      prisma.utente.findUnique.mockResolvedValue(null);
+      prisma.utente.findFirst.mockResolvedValue(null);
+      prisma.quartiere.findUnique.mockResolvedValue({ id: 'q-centro', nome: 'Centro Storico' });
+      prisma.utente.create.mockResolvedValue({
+        id: 'new-user-1',
+        nome: 'Mario',
+        cognome: 'Rossi',
+        email_normalizzata: 'mario.rossi@example.com',
+        ruolo: 'CITTADINO',
+        stato_account: 'ATTIVO',
+        verificato_il: null,
+        quartiere_id: 'q-centro',
+        creato_il: new Date()
+      });
+
+      const res = await auth.registraCittadino(
+        'Mario',
+        'Rossi',
+        'mario.rossi@example.com',
+        'PasswordSicura123!',
+        'RSSMRA85M01H501Q',
+        'q-centro'
+      );
+
+      expect(res.id).toBe('new-user-1');
+      expect(prisma.utente.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          codice_fiscale: 'RSSMRA85M01H501Q',
+          quartiere_id: 'q-centro'
+        })
+      });
+    });
+
+    it('Registrazione rifiuta codice fiscale non valido', async () => {
+      await expect(auth.registraCittadino(
+        'Mario',
+        'Rossi',
+        'mario.rossi@example.com',
+        'PasswordSicura123!',
+        'CF_NON_VALIDO',
+        'q-centro'
+      )).rejects.toThrow('lungo esattamente 16 caratteri');
+    });
+
+    it('Registrazione rifiuta quartiere non presente nel catalogo', async () => {
+      prisma.quartiere.findUnique.mockResolvedValue(null);
+
+      await expect(auth.registraCittadino(
+        'Mario',
+        'Rossi',
+        'mario.rossi@example.com',
+        'PasswordSicura123!',
+        'RSSMRA85M01H501Q',
+        'quartiere-inesistente'
+      )).rejects.toThrow('non è ammesso dal catalogo civico');
+    });
+
+    it('Politica privacy account duplicati: messaggio neutro anti-leak se CF o email già presenti', async () => {
+      prisma.utente.findUnique.mockResolvedValue(null);
+      // Simula CF già presente
+      prisma.utente.findFirst.mockResolvedValue({ id: 'existing-other-user' });
+      prisma.quartiere.findUnique.mockResolvedValue({ id: 'q-centro', nome: 'Centro Storico' });
+
+      await expect(auth.registraCittadino(
+        'Mario',
+        'Rossi',
+        'nuova.email@example.com',
+        'PasswordSicura123!',
+        'RSSMRA85M01H501Q',
+        'q-centro'
+      )).rejects.toThrow('I dati inseriti non consentono la registrazione');
+    });
+
+    it('Completamento profilo: aggiorna utente esistente con CF e Quartiere', async () => {
+      prisma.quartiere.findUnique.mockResolvedValue({ id: 'q-centro', nome: 'Centro Storico' });
+      prisma.utente.findFirst.mockResolvedValue(null);
+      prisma.utente.update.mockResolvedValue({
+        id: 'u-esistente',
+        codice_fiscale: 'RSSMRA85M01H501Q',
+        quartiere_id: 'q-centro'
+      });
+
+      const updated = await auth.completaProfiloUtente('u-esistente', 'RSSMRA85M01H501Q', 'q-centro');
+      expect(updated.codice_fiscale).toBe('RSSMRA85M01H501Q');
+      expect(prisma.utente.update).toHaveBeenCalledWith({
+        where: { id: 'u-esistente' },
+        data: {
+          codice_fiscale: 'RSSMRA85M01H501Q',
+          quartiere_id: 'q-centro'
+        }
       });
     });
   });

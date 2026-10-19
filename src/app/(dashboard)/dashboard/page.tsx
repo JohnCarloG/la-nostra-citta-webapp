@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import NuovaSegnalazioneForm from './nuova-segnalazione-form';
+import CompletaProfiloBanner from '@/components/completa-profilo-banner';
 
 function StatoBadge({ stato }: { stato: string }) {
   const map: Record<string, { cls: string; label: string }> = {
@@ -32,6 +33,12 @@ export default async function DashboardPage() {
 
   const isComitato = user.ruolo === 'COMITATO';
 
+  const quartieriUfficiali = await prisma.quartiere.findMany({
+    where: { is_ufficiale: true },
+    select: { id: true, nome: true, codice: true, is_ufficiale: true },
+    orderBy: { nome: 'asc' },
+  });
+
   // Recupero delle segnalazioni inserite dall'utente loggato
   let mieSegnalazioni: any[] = [];
   try {
@@ -60,7 +67,10 @@ export default async function DashboardPage() {
             Area personale di {user.nome} {user.cognome}
           </h1>
           <p className="text-xs text-[var(--text-secondary)] mt-1">
-            Account: <strong>{user.email_normalizzata}</strong> &bull; Ruolo: <strong>{user.ruolo}</strong> &bull; Stato: <strong>{user.stato_account}</strong>
+            Account: <strong>{user.email_normalizzata}</strong> &bull; Ruolo: <strong>{user.ruolo}</strong> &bull; Residenza: <strong>{user.quartiere?.nome || 'Non specificato'}</strong>
+            {user.quartiere && !user.quartiere.is_ufficiale && (
+              <span className="ml-1 text-amber-700 font-semibold">(catalogazione preliminare)</span>
+            )}
           </p>
         </div>
 
@@ -75,6 +85,9 @@ export default async function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Banner di conferma/completamento quartiere NIL se preliminare o mancante */}
+      <CompletaProfiloBanner user={user} quartieri={quartieriUfficiali} />
 
       {/* Form di inserimento nuova segnalazione */}
       <div id="nuova-segnalazione">

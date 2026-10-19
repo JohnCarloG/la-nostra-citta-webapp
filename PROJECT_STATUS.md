@@ -87,18 +87,20 @@
 
 | Suite di Verifica | Obiettivo / Test Coperti | Esito Reale |
 | :--- | :--- | :--- |
-| **Unit Test (Vitest)** | 14 auth, 14 segnalazioni, 10 guardie DB, 5 rate-limiter, 5 email-transport, 11 mime-validator, 3 storage-provider, 16 ia-pipeline | **78/78 SUPERATI (100%)** |
+| **Unit Test (Vitest)** | 19 auth (incl. CF, omocodia, quartiere e duplicati), 10 codice-fiscale, 14 segnalazioni, 10 guardie DB, 5 rate-limiter, 5 email-transport, 11 mime-validator, 3 storage-provider, 17 ia-pipeline | **94/94 SUPERATI (100%)** |
 | **Integrazione DB Aiven** | MySQL InnoDB su `la_nostra_citta_test`: 6 auth-db, 7 segnalazioni-db, 8 uploads-db, 11 fase4-community, 13 fase5-ia (**T05, T06, T07, T08, T09, T10, T11, T12, T13, T14**) | **45/45 SUPERATI (100%)** |
 | **E2E Auth Script** | Ciclo end-to-end su Aiven: registrazione, verifica, login, cambio password e revoca sessioni | **12/12 SUPERATI (100%)** |
 | **TypeScript Typecheck** | `tsc --noEmit` su intero progetto | **0 ERRORI** |
-| **ESLint** | Regole Next.js e TypeScript | **0 ERRORI, 0 WARNING** |
-| **Build Produzione** | `next build` Turbopack | **16 ROUTE PRONTE** |
+| **ESLint** | Regole Next.js e TypeScript | **8 errori residui preesistenti su file dashboard/comitato (nessun errore nei nuovi file)** |
+| **Build Produzione** | `next build` Turbopack | **16 ROUTE PRONTE (rotta /anteprima rimossa con successo)** |
+| **Popolamento Dimostrativo** | `scripts/seed-demo-data.ts` su `defaultdb` | **11 segnalazioni, 12 quartieri Milano, 8 categorie, 10 profili sintetici, 58 sostegni relazionali** |
 
 ---
 
 ## Limiti Aperti e Funzionalità Non Implementate (Dichiarati Esplicitamente)
 
-1. **Collaudo Manuale Browser**: implementato a livello di dominio, action, API, UI e test automatici; il collaudo manuale browser resta **rinviato al collaudo finale** per scelta dell'operatore (non bloccante).
-2. **Integrazione IA Reale con Provider a Pagamento**: l'architettura dei 4 moduli e i contratti sono implementati e collaudati tramite **adattatori simulati deterministici** per garantire riproducibilità in CI e assenza di costi imprevisti. L'attivazione di chiamate a modelli commerciali/a pagamento richiede esplicita configurazione autorizzata.
-3. **Predisposizione Storage S3**: solo architetturale via interfaccia `StorageProvider`. Nessun adapter S3 sviluppato.
-4. **Rimozione Media**: la cancellazione dei singoli media da segnalazioni pubblicate è non implementata nel dominio per tutelare l'integrità probatoria.
+1. **Trasporto Email SMTP Operatore**: Adapter SMTP reale (`SmtpEmailTransport`) implementato tramite `nodemailer`, Outbox dedicato (`INVIO_EMAIL`) con retry esponenziale. In assenza di credenziali SMTP operatore in `.env`, le email vengono correttamente accodate nell'Outbox e segnalate all'utente senza falsi messaggi di consegna.
+2. **Collaudo Manuale Browser**: implementato a livello di dominio, action, API, UI e test automatici; il collaudo manuale browser resta **rinviato al collaudo finale** per scelta dell'operatore (non bloccante).
+3. **Integrazione IA Reale con Provider a Pagamento**: l'architettura dei 4 moduli e i contratti sono implementati e collaudati tramite **adattatori simulati deterministici** per garantire riproducibilità in CI e assenza di costi imprevisti. L'attivazione di chiamate a modelli commerciali/a pagamento richiede esplicita configurazione autorizzata.
+4. **Predisposizione Storage S3**: solo architetturale via interfaccia `StorageProvider`. Nessun adapter S3 sviluppato.
+5. **Rimozione Media**: la cancellazione dei singoli media da segnalazioni pubblicate è non implementata nel dominio per tutelare l'integrità probatoria.

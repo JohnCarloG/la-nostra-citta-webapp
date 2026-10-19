@@ -4,7 +4,7 @@ PK = chiave primaria; FK = chiave esterna; UQ = univoco; ? = nullable; tutti gli
 
 ## Nucleo normalizzato
 QUARTIERE(id PK, nome UQ). Catalogo amministrato; può essere vuoto inizialmente senza impedire registrazione.
-UTENTE(id PK, nome, cognome, email_normalizzata UQ, password_hash, verificato_il?, ruolo, stato_account, quartiere_id? FK→QUARTIERE.id, creato_il).
+UTENTE(id PK, nome, cognome, email_normalizzata UQ, password_hash, codice_fiscale? UQ, verificato_il?, ruolo, stato_account, quartiere_id? FK→QUARTIERE.id, creato_il). Il codice fiscale è obbligatorio alla registrazione, validato formalmente (algoritmo ministeriale D.M. 23/12/1976, carattere di controllo CIN ed omocodia). È nullable a livello di schema per retrocompatibilità con i record preesistenti. Il quartiere di residenza è selezionato dal catalogo amministrato. Il CF identifica l'unicità dell'utenza e non prova la residenza anagrafica né è mai esposto pubblicamente.
 SEGNALAZIONE(id PK, autore_id FK→UTENTE.id, descrizione, latitudine, longitudine, origine_posizione, stato_avanzamento, stato_moderazione, revisione DEFAULT 1, creata_il, aggiornata_il).
 MEDIA(id PK, segnalazione_id FK→SEGNALAZIONE.id, storage_key UQ, tipo, mime, byte_size, durata_secondi?, sha256, stato_file, exif_lat?, exif_lon?, derivato_key? UQ, creato_il).
 SOSTEGNO(utente_id PK/FK→UTENTE.id, segnalazione_id PK/FK→SEGNALAZIONE.id, creato_il).
@@ -34,7 +34,7 @@ SUGGERIMENTO_CATEGORIA(analisi_id PK/FK→ANALISI_IA.id, categoria_id PK/FK→CA
 UPLOAD_TEMPORANEO(id PK, proprietario_id FK→UTENTE.id, storage_key UQ, tipo, mime, byte_size, sha256, durata_secondi?, exif_lat?, exif_lon?, stato, scade_il, consumato_il?). Stati IN_CARICAMENTO/VALIDO/SCARTATO/CONSUMATO. Consumo una sola volta, nella transazione di invio; storage_key è trasferita logicamente a MEDIA senza spostamento obbligatorio del file. Limiti e colonne coerenti con MEDIA.
 TOKEN_ACCOUNT(id PK, utente_id FK→UTENTE.id, tipo, token_hash UQ, scade_il, usato_il?, creato_il); tipi VERIFICA_EMAIL/RESET_PASSWORD. Mai token grezzo nel DB.
 SESSIONE(id PK, utente_id FK→UTENTE.id, token_hash UQ, scade_il, revocata_il?, creato_il). Adattabile alle sessioni native del framework, mantenendo la stessa semantica.
-OUTBOX(id PK, segnalazione_id FK→SEGNALAZIONE.id, revisione, tipo_evento, payload_json, creata_il, elaborata_il?, tentativi DEFAULT 0, prossimo_tentativo_il?). Evento scritto nella stessa transazione della segnalazione; consegna almeno una volta e consumatori idempotenti. Vincolo UQ(segnalazione_id,revisione,tipo_evento).
+OUTBOX(id PK, segnalazione_id? FK→SEGNALAZIONE.id, revisione DEFAULT 1, tipo_evento, payload_json, creata_il, elaborata_il?, tentativi DEFAULT 0, prossimo_tentativo_il?). Supporta sia eventi di segnalazione per la pipeline IA, sia eventi di comunicazione asincrona (INVIO_EMAIL) con instradamento dedicato, tentativi limitati e backoff esponenziale. Consegna eseguita rigorosamente fuori da transazioni DB aperte.
 RICHIESTA_IDEMPOTENTE(utente_id PK/FK→UTENTE.id, chiave PK, payload_hash, segnalazione_id? FK→SEGNALAZIONE.id, stato, scade_il). Impedisce duplicazione per ritrasmissione; stessa chiave con payload diverso restituisce conflitto.
 
 ## Normalizzazione e ridondanze intenzionali

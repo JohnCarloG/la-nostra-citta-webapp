@@ -17,7 +17,7 @@ export default function SostegnoButton({
   totaleSostegni: initialCount,
   inizialmenteSostenuto,
   isAutore,
-  isAuthenticated
+  isAuthenticated,
 }: SostegnoButtonProps) {
   const router = useRouter();
   const [sostenuto, setSostenuto] = useState(inizialmenteSostenuto);
@@ -30,30 +30,23 @@ export default function SostegnoButton({
       router.push('/login');
       return;
     }
-
     if (isAutore) {
-      setErrorMsg('Autosostegno vietato: non puoi sostenere una tua segnalazione.');
+      setErrorMsg('Autosostegno non consentito: non puoi votare la tua segnalazione.');
       return;
     }
 
     setErrorMsg(null);
     const nextState = !sostenuto;
     const nextCount = nextState ? count + 1 : Math.max(0, count - 1);
-
-    // Aggiornamento ottimistico
     setSostenuto(nextState);
     setCount(nextCount);
 
     startTransition(async () => {
-      let res;
-      if (nextState) {
-        res = await sostieniSegnalazioneAction(segnalazioneId);
-      } else {
-        res = await revocaSostegnoAction(segnalazioneId);
-      }
+      const res = nextState
+        ? await sostieniSegnalazioneAction(segnalazioneId)
+        : await revocaSostegnoAction(segnalazioneId);
 
       if (res.error) {
-        // Rollback ottimistico in caso di errore
         setSostenuto(!nextState);
         setCount(count);
         setErrorMsg(res.error);
@@ -65,43 +58,45 @@ export default function SostegnoButton({
 
   if (isAutore) {
     return (
-      <div className="flex flex-col items-start gap-1">
+      <div className="flex flex-col items-end gap-1">
         <button
+          id="sostegno-button"
           disabled
-          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-400 font-medium text-sm rounded-lg border border-slate-200 cursor-not-allowed"
-          title="Autosostegno vietato (RF06, VI03)"
+          className="btn btn-secondary btn-sm opacity-60"
+          aria-label="Autosostegno non consentito"
         >
-          <span>❤️</span>
-          <span>{count} sostegni</span>
-          <span className="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded ml-1">Autore</span>
+          Autore della segnalazione &bull; {count} sostegni
         </button>
-        <span className="text-xs text-slate-400 italic">Non puoi sostenere la tua stessa segnalazione</span>
+        <span className="text-[0.6875rem] text-[var(--text-muted)]">
+          L&rsquo;autore non può esprimere sostegno alla propria segnalazione
+        </span>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className="flex flex-col items-end gap-1">
       <button
+        id="sostegno-button"
+        type="button"
         onClick={handleToggle}
         disabled={isPending}
-        className={`inline-flex items-center gap-2 px-4 py-2 font-medium text-sm rounded-lg transition-all shadow-xs ${
-          sostenuto
-            ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
-            : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 hover:border-slate-400'
-        } ${isPending ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
+        className={`btn btn-sm ${
+          sostenuto ? 'btn-secondary border-[var(--blue-primary)] text-[var(--blue-primary)] font-bold' : 'btn-primary'
+        }`}
+        aria-pressed={sostenuto}
       >
-        <span className={sostenuto ? 'scale-110' : ''}>
-          {sostenuto ? '❤️' : '🤍'}
-        </span>
-        <span>{count}</span>
-        <span className="text-xs font-normal">
-          {sostenuto ? 'Sostegno attivo (clicca per revocare)' : 'Sostieni'}
-        </span>
+        {isPending
+          ? 'Salvataggio…'
+          : sostenuto
+          ? `Hai espresso sostegno (${count})`
+          : `Sostieni questa priorità (${count})`}
       </button>
 
       {errorMsg && (
-        <span className="text-xs text-rose-600 font-medium mt-1">{errorMsg}</span>
+        <span className="text-[0.6875rem] text-[var(--error-text)] font-medium">
+          {errorMsg}
+        </span>
       )}
     </div>
   );

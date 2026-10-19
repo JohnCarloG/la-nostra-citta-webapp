@@ -1037,3 +1037,113 @@ export async function getTutteSegnalazioniComitato(filtroStato?: string) {
     orderBy: { creata_il: 'desc' }
   });
 }
+
+/**
+ * Modifica del contenuto di una segnalazione da parte dell'autore (RF04, 05 riga 19, T10, T15)
+ * - Consentito solo all'autore mentre avanzamento è 'RICEVUTA'
+ * - Convalida revisione corrente (concorrenza ottimistica)
+ * - Incrementa la revisione (+1) e forza stato_moderazione a 'PENDENTE'
+ * - Genera un nuovo job Outbox per la nuova revisione
+ */
+export async function modificaSegnalazione(params: {
+  autoreId: string;
+  segnalazioneId: string;
+  expectedRevision: number;
+  nuovaDescrizione?: string;
+  nuovaLatitudine?: number;
+  nuovaLongitudine?: number;
+}) {
+  const { autoreId, segnalazioneId, expectedRevision, nuovaDescrizione, nuovaLatitudine, nuovaLongitudine } = params;
+
+  return prisma.$transaction(async (tx) => {
+    const lockedRows = await tx.$queryRaw<Array<{
+      id: string;
+      autore_id: string;
+      revisione: number;
+      stato_moderazione: string;
+      stato_avanzamento: string;
+      descrizione: string;
+    }>>`
+      SELECT id, autore_id, revisione, stato_moderazione, stato_avanzamento, descrizione
+      FROM Segnalazione
+      WHERE id = ${segnalazioneId}
+      FOR UPDATE
+    `;
+
+    if (lockedRows.length === 0) {
+      throw new NotFoundError('Segnalazione non trovata');
+    }
+
+    const segnalazione = lockedRows[0];
+
+    if (segnalazione.autore_id !== autoreId) {
+      throw new ForbiddenError('Solo l autore originario può modificare la segnalazione');
+    }
+
+    if (segnalazione.stato_avanzamento !== 'RICEVUTA') {
+      throw new ValidationError(`Impossibile modificare il contenuto: stato avanzamento è ${segnalazione.stato_avanzamento} (ammesso solo RICEVUTA)`);
+    }
+
+    if (segnalazione.revisione !== expectedRevision) {
+      throw new ConcurrencyConflictError(
+        `Conflitto di versione: attesa revisione ${expectedRevision}, trovata ${segnalazione.revisione}`
+      );
+    }
+
+    const nuovaRevisione = segnalazione.revisione + 1;
+    const finalDesc = nuovaDescrizione !== undefined ? nuovaDescrizione.trim() : segnalazione.descrizione;
+    if (finalDesc.length === 0) {
+      throw new ValidationError('La descrizione non può essere vuota');
+    }
+
+    const updated = await tx.segnalazione.update({
+      where: { id: segnalazioneId },
+      data: {
+        descrizione: finalDesc,
+        latitudine: nuovaLatitudine !== undefined ? nuovaLatitudine : undefined,
+        longitudine: nuovaLongitudine !== undefined ? nuovaLongitudine : undefined,
+        revisione: nuovaRevisione,
+        stato_moderazione: 'PENDENTE',
+        aggiornata_il: new Date()
+      }
+    });
+
+    await tx.eventoStato.create({
+      data: {
+        segnalazione_id: segnalazioneId,
+        tipo_attore: 'UTENTE',
+        attore_id: autoreId,
+        ambito: 'MODERAZIONE',
+        da_stato: segnalazione.stato_moderazione,
+        a_stato: 'PENDENTE',
+        motivazione: `Modifica del contenuto alla revisione ${nuovaRevisione}: rimessa in moderazione`,
+        revisione: nuovaRevisione
+      }
+    });
+
+    await tx.auditEvento.create({
+      data: {
+        tipo_attore: 'UTENTE',
+        attore_id: autoreId,
+        segnalazione_id: segnalazioneId,
+        azione: 'UPDATE_SEGNALAZIONE_REVISIONE',
+        dati_json: JSON.stringify({
+          da_revisione: segnalazione.revisione,
+          a_revisione: nuovaRevisione
+        })
+      }
+    });
+
+    await tx.outbox.create({
+      data: {
+        segnalazione_id: segnalazioneId,
+        revisione: nuovaRevisione,
+        tipo_evento: 'SEGNALAZIONE_MODIFICATA',
+        payload_json: JSON.stringify({ description: finalDesc })
+      }
+    });
+
+    return updated;
+  });
+}
+

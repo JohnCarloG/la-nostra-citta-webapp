@@ -15,7 +15,7 @@ interface UploadItem {
 
 export default function NuovaSegnalazioneForm() {
   const [descrizione, setDescrizione] = useState('');
-  const [lat, setLat] = useState('45.4642'); // Default Milano Centro
+  const [lat, setLat] = useState('45.4642');
   const [lon, setLon] = useState('9.1900');
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -30,24 +30,33 @@ export default function NuovaSegnalazioneForm() {
     if (!files || files.length === 0) return;
 
     if (uploads.length + files.length > 5) {
-      setError('Massimo 5 allegati totali consentiti per segnalazione.');
+      setError('È possibile allegare un massimo di 5 file multimediali.');
       return;
     }
 
     setUploading(true);
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      setUploadProgress(`Caricamento e verifica di "${file.name}"...`);
+      setUploadProgress(`Caricamento del file "${file.name}" in corso…`);
 
       const formData = new FormData();
       formData.append('file', file);
 
-      let res: { success: boolean; data?: { uploadId: string; storageKey: string; mime: string; byteSize: number; tipo: 'FOTO' | 'VIDEO'; exifCoords?: { lat: number; lon: number } }; error?: string };
+      let res: {
+        success: boolean;
+        data?: {
+          uploadId: string;
+          storageKey: string;
+          mime: string;
+          byteSize: number;
+          tipo: 'FOTO' | 'VIDEO';
+          exifCoords?: { lat: number; lon: number };
+        };
+        error?: string;
+      };
+
       try {
-        const response = await fetch('/api/uploads', {
-          method: 'POST',
-          body: formData
-        });
+        const response = await fetch('/api/uploads', { method: 'POST', body: formData });
         res = await response.json();
       } catch {
         res = { success: false, error: 'Errore di connessione durante il caricamento del file' };
@@ -67,74 +76,100 @@ export default function NuovaSegnalazioneForm() {
         mime: res.data.mime,
         byteSize: res.data.byteSize,
         tipo: res.data.tipo,
-        exifCoords: res.data.exifCoords
+        exifCoords: res.data.exifCoords,
       };
 
       setUploads(prev => [...prev, item]);
 
-      // Se il file contiene coordinate EXIF e l'utente non ha impostato coordinate personalizzate
-      if (res.data.exifCoords) {
-        setLat(res.data.exifCoords.lat.toString());
-        setLon(res.data.exifCoords.lon.toString());
+      // Se il file contiene coordinate GPS e i campi sono ai valori predefiniti, aggiorna le coordinate
+      if (res.data.exifCoords && lat === '45.4642' && lon === '9.1900') {
+        setLat(res.data.exifCoords.lat.toFixed(6));
+        setLon(res.data.exifCoords.lon.toFixed(6));
       }
     }
 
     setUploading(false);
     setUploadProgress(null);
-    e.target.value = ''; // Reset input
   };
 
-  const removeUpload = (key: string) => {
-    setUploads(prev => prev.filter(u => u.storageKey !== key));
+  const removeUpload = (storageKey: string) => {
+    setUploads(prev => prev.filter(u => u.storageKey !== storageKey));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
+    const latNum = parseFloat(lat);
+    const lonNum = parseFloat(lon);
+
+    if (isNaN(latNum) || latNum < -90 || latNum > 90) {
+      setError('Inserisci una latitudine valida compresa tra -90 e 90.');
+      return;
+    }
+
+    if (isNaN(lonNum) || lonNum < -180 || lonNum > 180) {
+      setError('Inserisci una longitudine valida compresa tra -180 e 180.');
+      return;
+    }
+
+    if (!descrizione.trim() || descrizione.trim().length < 10) {
+      setError('La descrizione della segnalazione deve contenere almeno 10 caratteri.');
+      return;
+    }
+
     if (uploads.length === 0) {
-      setError('Devi allegare almeno un\'immagine o un video valido.');
+      setError('È obbligatorio allegare almeno una fotografia o un video a documentazione del problema.');
       return;
     }
 
     setSubmitting(true);
-    const formData = new FormData();
-    formData.append('descrizione', descrizione);
-    formData.append('latitudine', lat);
-    formData.append('longitudine', lon);
-    formData.append('storageKeys', JSON.stringify(uploads.map(u => u.storageKey)));
 
-    const res = await submitSegnalazioneAction(formData);
-    setSubmitting(false);
+    try {
+      const fd = new FormData();
+      fd.set('descrizione', descrizione.trim());
+      fd.set('latitudine', String(latNum));
+      fd.set('longitudine', String(lonNum));
+      fd.set('storageKeys', JSON.stringify(uploads.map(u => u.storageKey)));
 
-    if (res.success && res.segnalazioneId) {
+      const res = await submitSegnalazioneAction(fd);
+
+      if (!res.success || !res.segnalazioneId) {
+        setError(res.error || 'Impossibile inviare la segnalazione. Riprova più tardi.');
+        setSubmitting(false);
+        return;
+      }
+
       setSuccessId(res.segnalazioneId);
-    } else {
-      setError(res.error || 'Errore durante la creazione della segnalazione.');
+      setDescrizione('');
+      setUploads([]);
+    } catch {
+      setError('Si è verificato un errore imprevisto durante l&rsquo;invio. Riprova.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   if (successId) {
     return (
-      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center space-y-4">
-        <h3 className="text-xl font-bold text-emerald-800">Segnalazione Inviata con Successo!</h3>
-        <p className="text-sm text-emerald-700">
-          La segnalazione è stata registrata con stato <strong>RICEVUTA</strong> e inoltrata alla coda di moderazione.
+      <div className="panel alert-success flex flex-col gap-3">
+        <h2 className="text-base font-bold text-[var(--success-text)]">
+          Segnalazione inviata con successo
+        </h2>
+        <p className="text-xs text-[var(--success-text)]">
+          La tua segnalazione è stata registrata con codice identificativo: <strong className="font-mono">{successId}</strong>.
+          È ora nella coda di verifica del comitato di garanzia. Una volta verificata, sarà pubblicata e aperta al sostegno dei residenti.
         </p>
-        <div className="text-xs font-mono bg-white p-2 rounded border border-emerald-200 inline-block text-slate-700">
-          ID Segnalazione: {successId}
-        </div>
-        <div className="pt-2">
+        <div className="flex items-center gap-3 mt-2">
+          <a href={`/segnalazioni/${successId}`} className="btn btn-primary btn-sm">
+            Visualizza la scheda &rarr;
+          </a>
           <button
             type="button"
-            onClick={() => {
-              setSuccessId(null);
-              setDescrizione('');
-              setUploads([]);
-            }}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700"
+            onClick={() => setSuccessId(null)}
+            className="btn btn-secondary btn-sm"
           >
-            Invia un&apos;altra segnalazione
+            Invia un&rsquo;altra segnalazione
           </button>
         </div>
       </div>
@@ -142,133 +177,165 @@ export default function NuovaSegnalazioneForm() {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-6">
-      <div className="border-b pb-4">
-        <h2 className="text-lg font-semibold text-slate-900">Nuova Segnalazione Territoriale</h2>
-        <p className="text-sm text-slate-500">
-          Allega fino a 5 fotografie (JPEG/PNG/WebP max 10 MiB) o brevi video (MP4 max 50 MiB).
+    <div className="panel">
+      <div className="border-b border-[var(--border-light)] pb-3 mb-4">
+        <h2 className="section-title text-base">
+          Invia una nuova segnalazione
+        </h2>
+        <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+          Compila tutti i campi richiesti per documentare la situazione in modo chiaro e verificabile.
         </p>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-md text-sm">
-          {error}
+        <div className="alert alert-error mb-4" role="alert">
+          <p className="text-xs">{error}</p>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        {/* Descrizione */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Descrizione del problema <span className="text-red-500">*</span>
+          <label htmlFor="segnalazione-descrizione" className="form-label">
+            Descrizione dettagliata della criticità <span className="text-[var(--error-text)]">*</span>
           </label>
+          <p className="form-helper">
+            Spiega chiaramente qual è il problema, la via o piazza interessata e l&rsquo;eventuale situazione di disagio o pericolo (minimo 10 caratteri).
+          </p>
           <textarea
+            id="segnalazione-descrizione"
             required
-            rows={3}
+            rows={4}
             value={descrizione}
             onChange={e => setDescrizione(e.target.value)}
-            className="w-full rounded-md border border-slate-300 p-2.5 text-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
-            placeholder="Descrivi la situazione o il problema rilevato nel quartiere..."
+            placeholder="Es. In via Roma all&rsquo;altezza del civico 12 il marciapiede presenta un dislivello pronunciato che impedisce il passaggio di carrozzine..."
+            className="form-input text-xs"
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Latitudine <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              step="any"
-              required
-              value={lat}
-              onChange={e => setLat(e.target.value)}
-              className="w-full rounded-md border border-slate-300 p-2 text-sm font-mono"
-            />
+        {/* Localizzazione geografica */}
+        <div className="panel-subtle p-3 flex flex-col gap-3">
+          <span className="text-xs font-bold text-[var(--text-primary)]">
+            Posizione geografica (Coordinate)
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="segnalazione-lat" className="form-label text-xs">
+                Latitudine <span className="text-[var(--error-text)]">*</span>
+              </label>
+              <input
+                id="segnalazione-lat"
+                type="number"
+                step="any"
+                required
+                value={lat}
+                onChange={e => setLat(e.target.value)}
+                className="form-input font-mono text-xs"
+              />
+            </div>
+            <div>
+              <label htmlFor="segnalazione-lon" className="form-label text-xs">
+                Longitudine <span className="text-[var(--error-text)]">*</span>
+              </label>
+              <input
+                id="segnalazione-lon"
+                type="number"
+                step="any"
+                required
+                value={lon}
+                onChange={e => setLon(e.target.value)}
+                className="form-input font-mono text-xs"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Longitudine <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              step="any"
-              required
-              value={lon}
-              onChange={e => setLon(e.target.value)}
-              className="w-full rounded-md border border-slate-300 p-2 text-sm font-mono"
-            />
-          </div>
+          <p className="text-[0.6875rem] text-[var(--text-muted)]">
+            Se alleghi una foto con posizione GPS attiva, le coordinate verranno compilate automaticamente. In caso contrario, verifica che le coordinate corrispondano al punto esatto.
+          </p>
         </div>
 
-        <p className="text-xs text-slate-500 italic">
-          Nota: le coordinate geografiche eventualmente estratte dai metadati EXIF del file fotografico sono indicative e non costituiscono prova attendibile del reale luogo dello scatto. Verifica e modifica la posizione se necessario.
-        </p>
-
-        {/* Sezione Allegati */}
-        <div className="border border-dashed border-slate-300 rounded-lg p-4 bg-slate-50 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-700">
-              Allegati Multimediali ({uploads.length}/5)
-            </span>
-            <label className={`cursor-pointer inline-flex items-center px-3 py-1.5 bg-blue-600 text-white rounded-md text-xs font-medium hover:bg-blue-700 ${uploads.length >= 5 || uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-              Sfoglia File...
+        {/* Allegati */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label htmlFor="segnalazione-files" className="form-label mb-0">
+              Allegati fotografici o video ({uploads.length}/5) <span className="text-[var(--error-text)]">*</span>
+            </label>
+            <label
+              htmlFor="segnalazione-files"
+              className={`btn btn-secondary btn-sm ${uploads.length >= 5 || uploading ? 'opacity-50 pointer-events-none' : ''}`}
+              style={{ cursor: 'pointer' }}
+            >
+              Sfoglia file da allegare…
               <input
+                id="segnalazione-files"
                 type="file"
                 multiple
                 accept="image/jpeg,image/png,image/webp,video/mp4"
                 onChange={handleFileChange}
                 disabled={uploads.length >= 5 || uploading}
-                className="hidden"
+                className="sr-only"
               />
             </label>
           </div>
+          <p className="form-helper">
+            Formati accettati: JPEG, PNG, WebP o MP4. Massimo 5 allegati. È richiesta almeno 1 immagine di riscontro.
+          </p>
 
-          {uploadProgress && (
-            <div className="text-xs text-blue-600 font-medium animate-pulse">
-              {uploadProgress}
-            </div>
-          )}
+          <div className="panel-subtle p-3 min-h-[70px] flex flex-col justify-center">
+            {uploadProgress && (
+              <p className="text-xs text-[var(--blue-primary)] font-semibold">
+                {uploadProgress}
+              </p>
+            )}
 
-          {uploads.length === 0 ? (
-            <p className="text-xs text-slate-400">
-              Nessun file allegato. È obbligatorio includere almeno una fotografia o un video valido.
-            </p>
-          ) : (
-            <ul className="divide-y divide-slate-200">
-              {uploads.map(item => (
-                <li key={item.storageKey} className="py-2 flex items-center justify-between text-xs">
-                  <div className="space-y-0.5">
-                    <span className="font-medium text-slate-800">{item.fileName}</span>
-                    <div className="text-slate-500 flex gap-2">
-                      <span className="uppercase font-semibold text-blue-700">{item.tipo}</span>
-                      <span>({(item.byteSize / 1024).toFixed(1)} KB)</span>
+            {uploads.length === 0 && !uploadProgress ? (
+              <p className="text-xs text-center text-[var(--text-muted)] py-2">
+                Nessun file ancora allegato. Clicca su &ldquo;Sfoglia file&rdquo; per aggiungere la documentazione fotografica.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2 m-0 p-0 list-none">
+                {uploads.map(item => (
+                  <li
+                    key={item.storageKey}
+                    className="flex items-center justify-between py-1.5 border-b border-[var(--border-light)] text-xs gap-3 last:border-b-0"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-semibold text-[var(--text-primary)] truncate max-w-[200px] sm:max-w-xs">
+                        {item.fileName}
+                      </span>
+                      <span className="badge badge-categoria text-[0.625rem]">
+                        {item.tipo} &bull; {(item.byteSize / 1024).toFixed(0)} KB
+                      </span>
                       {item.exifCoords && (
-                        <span className="text-emerald-600 font-mono">
-                          EXIF GPS: {item.exifCoords.lat}, {item.exifCoords.lon}
+                        <span className="text-[0.625rem] text-[var(--success-text)] font-mono hidden sm:inline">
+                          GPS rilevato
                         </span>
                       )}
                     </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeUpload(item.storageKey)}
-                    className="text-red-600 hover:text-red-800 font-medium px-2 py-1"
-                  >
-                    Rimuovi
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+                    <button
+                      type="button"
+                      onClick={() => removeUpload(item.storageKey)}
+                      className="btn btn-danger btn-sm text-[0.6875rem] py-0.5 px-2 shrink-0"
+                    >
+                      Rimuovi
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
 
-        <button
-          type="submit"
-          disabled={submitting || uploading || uploads.length === 0}
-          className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 transition-colors"
-        >
-          {submitting ? 'Invio in corso...' : 'Invia Segnalazione Atomica'}
-        </button>
+        {/* Pulsante di invio conforme ai requisiti */}
+        <div className="border-t border-[var(--border-light)] pt-4 flex items-center justify-end">
+          <button
+            type="submit"
+            id="submit-segnalazione"
+            disabled={submitting || uploading || uploads.length === 0}
+            className="btn btn-primary"
+          >
+            {submitting ? 'Invio in corso…' : 'Invia segnalazione'}
+          </button>
+        </div>
       </form>
     </div>
   );

@@ -25,14 +25,15 @@ export default function LogoutButton() {
   return (
     <div>
       {errorMessage && (
-        <p className="text-sm text-red-600 mb-2">{errorMessage}</p>
+        <p className="text-sm mb-1" style={{ color: 'var(--rose-700)' }}>{errorMessage}</p>
       )}
       <button
+        id="logout-button"
         onClick={handleLogout}
         disabled={isPending}
-        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md shadow-sm transition-colors disabled:bg-red-300"
+        className="btn btn-danger btn-sm"
       >
-        {isPending ? 'Disconnessione...' : 'Esci dall\'account'}
+        {isPending ? 'Uscita...' : 'Esci'}
       </button>
     </div>
   );

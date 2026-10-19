@@ -20,64 +20,78 @@ export default function VerifyEmailClient({ initialToken }: { initialToken?: str
 
   if (confirmed || state?.success) {
     return (
-      <div className="max-w-md mx-auto mt-20 p-6 bg-white rounded-lg shadow-md border border-slate-200 text-center">
-        <h1 className="text-2xl font-bold mb-4 text-green-600">Account Verificato!</h1>
-        <p className="text-slate-600 mb-6 text-sm">
-          Il tuo indirizzo email è stato confermato con successo. Ora puoi accedere con le tue credenziali.
-        </p>
-        <Link
-          href="/login"
-          className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors text-sm"
-        >
-          Vai al Login
-        </Link>
+      <div className="flex flex-1 items-center justify-center px-4 py-12 bg-white">
+        <div className="panel alert-success max-w-md w-full text-center flex flex-col items-center gap-3">
+          <h1 className="section-title text-base text-[var(--success-text)]">
+            Account civico attivato con successo
+          </h1>
+          <p className="text-xs text-[var(--success-text)]">
+            Il tuo indirizzo email è stato verificato. Ora puoi accedere con le tue credenziali, inserire segnalazioni e sostenere le priorità.
+          </p>
+          <Link
+            href="/login"
+            className="btn btn-primary btn-sm mt-2"
+          >
+            Accedi alla piattaforma &rarr;
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-md mx-auto mt-20 p-6 bg-white rounded-lg shadow-md border border-slate-200 text-center">
-      <h1 className="text-2xl font-bold mb-2 text-slate-900">Verifica Account</h1>
-      <p className="text-sm text-slate-500 mb-6">
-        Fai clic sul pulsante sottostante per confermare e attivare il tuo account civico.
-      </p>
-
-      {state?.error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded mb-4 text-sm text-left">
-          {state.error}
+    <div className="flex flex-1 items-center justify-center px-4 py-12 bg-white">
+      <div className="w-full max-w-sm">
+        <div className="mb-6">
+          <h1 className="page-title text-xl mb-1">
+            Attivazione account
+          </h1>
+          <p className="text-xs text-[var(--text-secondary)]">
+            Conferma l&rsquo;indirizzo email associato al tuo profilo civico.
+          </p>
         </div>
-      )}
 
-      <form action={formAction} className="space-y-4">
-        <input type="hidden" name="token" value={initialToken ?? ''} />
+        <div className="panel flex flex-col gap-4">
+          {state?.error && (
+            <div className="alert alert-error" role="alert">
+              <p className="text-xs">{state.error}</p>
+            </div>
+          )}
 
-        {!initialToken && (
-          <div className="text-left">
-            <label className="block text-sm font-medium text-slate-700">Token di Verifica</label>
-            <input
-              type="text"
-              name="token"
-              required
-              className="mt-1 block w-full rounded-md border-slate-300 shadow-sm p-2 border font-mono text-sm"
-              placeholder="Incolla il token qui"
-            />
+          <form action={formAction} className="flex flex-col gap-4">
+            <input type="hidden" name="token" value={initialToken ?? ''} />
+
+            {!initialToken && (
+              <div>
+                <label htmlFor="verify-token-input" className="form-label text-xs">
+                  Token di verifica
+                </label>
+                <input
+                  id="verify-token-input"
+                  type="text"
+                  name="token"
+                  required
+                  className="form-input text-xs font-mono"
+                  placeholder="Incolla il token ricevuto via email"
+                />
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isPending}
+              className="btn btn-primary btn-sm w-full"
+            >
+              {isPending ? 'Verifica in corso…' : 'Conferma e attiva account'}
+            </button>
+          </form>
+
+          <div className="text-center pt-3 border-t border-[var(--border-light)] text-xs">
+            <Link href="/resend-verification" className="text-[var(--blue-primary)] hover:underline">
+              Non hai ricevuto il link? Richiedi nuovo invio
+            </Link>
           </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={isPending}
-          className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none disabled:bg-blue-300 transition-colors"
-        >
-          {isPending ? 'Verifica in corso...' : 'Conferma e Attiva Account'}
-        </button>
-      </form>
-
-      <div className="mt-6 text-center text-xs text-slate-500 border-t pt-4">
-        Problemi con il link?{' '}
-        <Link href="/resend-verification" className="text-blue-600 hover:underline">
-          Richiedi una nuova email di verifica
-        </Link>
+        </div>
       </div>
     </div>
   );

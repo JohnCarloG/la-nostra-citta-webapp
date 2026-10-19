@@ -11,10 +11,10 @@ interface RitiraButtonProps {
 
 export default function RitiraButton({ segnalazioneId, revisione }: RitiraButtonProps) {
   const router = useRouter();
-  const [isOpen, setIsOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const [showConfirm, setShowConfirm] = useState(false);
   const [motivazione, setMotivazione] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
 
   const handleRitira = (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,82 +23,79 @@ export default function RitiraButton({ segnalazioneId, revisione }: RitiraButton
       return;
     }
 
-    setErrorMsg(null);
     startTransition(async () => {
-      const formData = new FormData();
-      formData.set('segnalazioneId', segnalazioneId);
-      formData.set('motivazione', motivazione.trim());
-      formData.set('expectedRevision', revisione.toString());
+      const fd = new FormData();
+      fd.set('segnalazioneId', segnalazioneId);
+      fd.set('motivazione', motivazione.trim());
+      fd.set('revisioneAttesa', String(revisione));
 
-      const res = await ritiraSegnalazioneAction(formData);
-      if (res.error) {
-        setErrorMsg(res.error);
-      } else {
-        setIsOpen(false);
+      const res = await ritiraSegnalazioneAction(fd);
+      if (res.success) {
+        setShowConfirm(false);
         router.refresh();
+      } else {
+        setErrorMsg(res.error || 'Errore durante il ritiro della segnalazione');
       }
     });
   };
 
+  if (!showConfirm) {
+    return (
+      <button
+        type="button"
+        onClick={() => setShowConfirm(true)}
+        className="btn btn-danger btn-sm"
+      >
+        Ritira segnalazione
+      </button>
+    );
+  }
+
   return (
-    <div>
-      {!isOpen ? (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors"
-        >
-          Ritira Segnalazione
-        </button>
-      ) : (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">Conferma Ritiro Segnalazione</h3>
-            <p className="text-sm text-slate-600">
-              Il ritiro è uno stato terminale (RF05). La segnalazione non comparirà più tra quelle pubbliche né nella classifica generale.
-            </p>
+    <div className="panel alert-warning flex flex-col gap-3 text-xs max-w-sm">
+      <div className="flex flex-col gap-1">
+        <strong className="text-[var(--warning-text)]">Conferma ritiro definitivo:</strong>
+        <p className="text-[var(--warning-text)]">
+          Il ritiro è un&rsquo;azione irreversibile. La segnalazione non sarà più visibile al pubblico e non potrà più ricevere sostegni.
+        </p>
+      </div>
 
-            <form onSubmit={handleRitira} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                  Motivazione del ritiro (obbligatoria)
-                </label>
-                <textarea
-                  value={motivazione}
-                  onChange={(e) => setMotivazione(e.target.value)}
-                  placeholder="Es. Problema risolto autonomamente, duplicato o richiesta errata..."
-                  rows={3}
-                  required
-                  className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-rose-500 focus:outline-hidden"
-                />
-              </div>
-
-              {errorMsg && (
-                <div className="p-2.5 rounded bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium">
-                  {errorMsg}
-                </div>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  disabled={isPending}
-                  className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-                >
-                  Annulla
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="px-4 py-2 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {isPending ? 'Elaborazione...' : 'Conferma Ritiro Definitivo'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {errorMsg && (
+        <p className="text-[var(--error-text)] font-semibold">{errorMsg}</p>
       )}
+
+      <form onSubmit={handleRitira} className="flex flex-col gap-2">
+        <label htmlFor={`mot-ritiro-${segnalazioneId}`} className="form-label text-[0.6875rem]">
+          Motivazione del ritiro (obbligatoria)
+        </label>
+        <textarea
+          id={`mot-ritiro-${segnalazioneId}`}
+          rows={2}
+          required
+          placeholder="Es. Problema già risolto autonomamente o duplicato..."
+          value={motivazione}
+          onChange={e => setMotivazione(e.target.value)}
+          className="form-input text-xs py-1"
+        />
+
+        <div className="flex items-center gap-2 justify-end mt-1">
+          <button
+            type="button"
+            onClick={() => { setShowConfirm(false); setErrorMsg(null); }}
+            className="btn btn-secondary btn-sm text-xs py-1"
+            disabled={isPending}
+          >
+            Annulla
+          </button>
+          <button
+            type="submit"
+            disabled={isPending}
+            className="btn btn-danger btn-sm text-xs py-1"
+          >
+            {isPending ? 'Ritiro in corso…' : 'Conferma ritiro definitivo'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

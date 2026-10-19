@@ -18,84 +18,87 @@ function ResetPasswordConfirmForm() {
 
   if (state?.success) {
     return (
-      <div className="max-w-md mx-auto mt-20 p-6 bg-white rounded-lg shadow-md border border-slate-200 text-center">
-        <h1 className="text-2xl font-bold mb-4 text-green-600">Password Aggiornata!</h1>
-        <p className="text-slate-600 mb-6 text-sm">
-          La password del tuo account è stata reimpostata con successo. Tutte le sessioni precedenti sono state revocate per sicurezza.
+      <div className="panel alert-success max-w-md mx-auto text-center flex flex-col items-center gap-3">
+        <h1 className="section-title text-base text-[var(--success-text)]">
+          Password aggiornata con successo
+        </h1>
+        <p className="text-xs text-[var(--success-text)]">
+          La nuova password è stata salvata. Tutte le sessioni precedenti sono state revocate per garantire la sicurezza del profilo.
         </p>
         <Link
           href="/login"
-          className="inline-block px-4 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors text-sm"
+          className="btn btn-primary btn-sm mt-2"
         >
-          Accedi con la nuova password
+          Accedi con la nuova password &rarr;
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="max-w-md mx-auto mt-20 p-6 bg-white rounded-lg shadow-md border border-slate-200">
-      <h1 className="text-2xl font-bold mb-2 text-center text-slate-900">Nuova Password</h1>
-      <p className="text-sm text-slate-500 text-center mb-6">
-        Inserisci il token di sicurezza ricevuto e la nuova password scelta.
-      </p>
+    <div className="w-full max-w-sm mx-auto">
+      <div className="mb-6">
+        <h1 className="page-title text-xl mb-1">
+          Imposta nuova password
+        </h1>
+        <p className="text-xs text-[var(--text-secondary)]">
+          Inserisci il token di sicurezza monouso ricevuto via email e definisci la nuova password.
+        </p>
+      </div>
 
-      {state?.error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded mb-4 text-sm">
-          {state.error}
+      <div className="panel flex flex-col gap-4">
+        {state?.error && (
+          <div className="alert alert-error" role="alert">
+            <p className="text-xs">{state.error}</p>
+          </div>
+        )}
+
+        <form action={formAction} className="flex flex-col gap-4">
+          <div>
+            <label htmlFor="confirm-token" className="form-label text-xs">
+              Token di sicurezza
+            </label>
+            <input
+              id="confirm-token"
+              type="text"
+              name="token"
+              defaultValue={initialToken}
+              required
+              className="form-input text-xs font-mono"
+              placeholder="Incolla il token monouso"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="confirm-new-password" className="form-label text-xs">
+              Nuova password (minimo 8 caratteri)
+            </label>
+            <input
+              id="confirm-new-password"
+              type="password"
+              name="newPassword"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              className="form-input text-xs"
+              placeholder="••••••••"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={isPending}
+            className="btn btn-primary btn-sm w-full mt-2"
+          >
+            {isPending ? 'Aggiornamento…' : 'Salva nuova password'}
+          </button>
+        </form>
+
+        <div className="pt-3 border-t border-[var(--border-light)] text-center text-xs">
+          <Link href="/login" className="text-[var(--blue-primary)] hover:underline">
+            &larr; Torna alla schermata di accesso
+          </Link>
         </div>
-      )}
-
-      <form action={formAction} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700">Token di Reset</label>
-          <input
-            type="text"
-            name="token"
-            defaultValue={initialToken}
-            required
-            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm p-2 border font-mono text-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
-            placeholder="Incolla il token qui"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-700">Nuova Password</label>
-          <input
-            type="password"
-            name="password"
-            required
-            minLength={8}
-            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm p-2 border focus:border-blue-500 focus:ring focus:ring-blue-200"
-            placeholder="Almeno 8 caratteri"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-700">Conferma Nuova Password</label>
-          <input
-            type="password"
-            name="confermaPassword"
-            required
-            minLength={8}
-            className="mt-1 block w-full rounded-md border-slate-300 shadow-sm p-2 border focus:border-blue-500 focus:ring focus:ring-blue-200"
-            placeholder="Ripeti la nuova password"
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={isPending}
-          className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none disabled:bg-blue-300 transition-colors"
-        >
-          {isPending ? 'Salvataggio in corso...' : 'Reimposta Password'}
-        </button>
-      </form>
-
-      <div className="mt-6 text-center text-sm text-slate-600 border-t pt-4">
-        <Link href="/login" className="text-blue-600 hover:underline">
-          Annulla e torna al login
-        </Link>
       </div>
     </div>
   );
@@ -103,8 +106,10 @@ function ResetPasswordConfirmForm() {
 
 export default function ResetPasswordConfirmPage() {
   return (
-    <Suspense fallback={<div className="text-center mt-20 text-slate-500">Caricamento...</div>}>
-      <ResetPasswordConfirmForm />
-    </Suspense>
+    <div className="flex flex-1 items-center justify-center px-4 py-12 bg-white">
+      <Suspense fallback={<div className="text-xs text-[var(--text-muted)]">Caricamento…</div>}>
+        <ResetPasswordConfirmForm />
+      </Suspense>
+    </div>
   );
 }

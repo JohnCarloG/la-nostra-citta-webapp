@@ -1,95 +1,153 @@
 import { getCurrentUser } from '@/actions/auth';
 import { redirect } from 'next/navigation';
-import LogoutButton from './logout-button';
+import Link from 'next/link';
+import { prisma } from '@/lib/db';
 import NuovaSegnalazioneForm from './nuova-segnalazione-form';
+
+function StatoBadge({ stato }: { stato: string }) {
+  const map: Record<string, { cls: string; label: string }> = {
+    RICEVUTA:             { cls: 'badge badge-ricevuta',  label: 'Ricevuta' },
+    PRESA_IN_CARICO:      { cls: 'badge badge-carico',    label: 'In carico al comitato' },
+    INVIATA_AI_CANDIDATI: { cls: 'badge badge-candidati', label: 'Trasmessa ai candidati' },
+    RITIRATA:             { cls: 'badge badge-ritirata',  label: 'Ritirata' },
+  };
+  const { cls, label } = map[stato] ?? { cls: 'badge badge-categoria', label: stato.replace(/_/g, ' ') };
+  return <span className={cls}>{label}</span>;
+}
+
+function ModerazioneBadge({ stato }: { stato: string }) {
+  const map: Record<string, { cls: string; label: string }> = {
+    PENDENTE:     { cls: 'badge badge-mod-pendente',  label: 'In attesa di verifica' },
+    IN_REVISIONE: { cls: 'badge badge-mod-revisione', label: 'In revisione' },
+    APPROVATA:    { cls: 'badge badge-mod-approvata', label: 'Approvata' },
+    RIFIUTATA:    { cls: 'badge badge-mod-rifiutata', label: 'Rifiutata' },
+  };
+  const { cls, label } = map[stato] ?? { cls: 'badge badge-categoria', label: stato };
+  return <span className={cls}>{label}</span>;
+}
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
+  if (!user) redirect('/login');
 
-  if (!user) {
-    redirect('/login');
+  const isComitato = user.ruolo === 'COMITATO';
+
+  // Recupero delle segnalazioni inserite dall'utente loggato
+  let mieSegnalazioni: any[] = [];
+  try {
+    mieSegnalazioni = await prisma.segnalazione.findMany({
+      where: { autore_id: user.id },
+      orderBy: { creata_il: 'desc' },
+      include: {
+        categorie: {
+          include: { categoria: true }
+        },
+        _count: {
+          select: { sostegni: true }
+        }
+      }
+    });
+  } catch (err) {
+    console.error('Errore recupero segnalazioni utente:', err);
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header di benvenuto */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">
-              Bentornato, {user.nome} {user.cognome}
-            </h1>
-            <p className="text-sm text-slate-500 mt-1">
-              Area riservata della piattaforma civica &quot;La Nostra Città&quot;
-            </p>
-          </div>
-          <LogoutButton />
+    <main className="page-container py-8 flex flex-col gap-8">
+      {/* Testata di benvenuto istituzionale */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--border-light)] pb-4">
+        <div>
+          <h1 className="page-title text-xl sm:text-2xl">
+            Area personale di {user.nome} {user.cognome}
+          </h1>
+          <p className="text-xs text-[var(--text-secondary)] mt-1">
+            Account: <strong>{user.email_normalizzata}</strong> &bull; Ruolo: <strong>{user.ruolo}</strong> &bull; Stato: <strong>{user.stato_account}</strong>
+          </p>
         </div>
 
-        {/* Scheda stato account */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ruolo</span>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                {user.ruolo}
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Stato Account</span>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                {user.stato_account}
-              </span>
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Email Verificata</span>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                {user.verificato_il ? 'Verificato' : 'Non Verificato'}
-              </span>
-            </div>
-          </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {isComitato && (
+            <Link
+              href="/comitato"
+              className="btn btn-secondary btn-sm border-[var(--warning-border)] text-[var(--warning-text)] bg-[var(--warning-bg)]"
+            >
+              Coda operativa Comitato &rarr;
+            </Link>
+          )}
         </div>
+      </div>
 
-        {/* Dettagli utente */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-slate-900 border-b pb-2">Riepilogo Profilo</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-slate-500">Email di accesso</p>
-              <p className="font-medium text-slate-900">{user.email_normalizzata}</p>
-            </div>
-            <div>
-              <p className="text-slate-500">Identificativo Univoco</p>
-              <p className="font-mono text-xs text-slate-700 bg-slate-100 p-1.5 rounded">{user.id}</p>
-            </div>
-            <div>
-              <p className="text-slate-500">Iscritto il</p>
-              <p className="font-medium text-slate-900">
-                {new Date(user.creato_il).toLocaleDateString('it-IT', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric'
-                })}
-              </p>
-            </div>
-            <div>
-              <p className="text-slate-500">Quartiere di riferimento</p>
-              <p className="font-medium text-slate-900">
-                {user.quartiere_id ?? 'Non assegnato'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Pannello Segnalazioni Civiche e Upload Allegati */}
+      {/* Form di inserimento nuova segnalazione */}
+      <div id="nuova-segnalazione">
         <NuovaSegnalazioneForm />
       </div>
-    </div>
+
+      {/* Elenco reale delle proprie segnalazioni */}
+      <section className="panel" aria-labelledby="mie-segnalazioni-title">
+        <div className="flex items-center justify-between border-b border-[var(--border-light)] pb-3 mb-4">
+          <h2 id="mie-segnalazioni-title" className="section-title text-base">
+            Le tue segnalazioni ({mieSegnalazioni.length})
+          </h2>
+          <span className="text-xs text-[var(--text-muted)]">
+            Stato e tracciamento in tempo reale
+          </span>
+        </div>
+
+        {mieSegnalazioni.length === 0 ? (
+          <div className="empty-state">
+            <p className="text-sm font-semibold text-[var(--text-primary)]">
+              Non hai ancora inserito alcuna segnalazione
+            </p>
+            <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-md mx-auto">
+              Utilizza il modulo sopra per inviare la tua prima segnalazione documentata per il territorio.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {mieSegnalazioni.map((seg) => (
+              <div
+                key={seg.id}
+                className="panel-subtle flex flex-col sm:flex-row sm:items-start justify-between gap-3"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                    <StatoBadge stato={seg.stato_avanzamento} />
+                    <ModerazioneBadge stato={seg.stato_moderazione} />
+                    <span className="text-[0.6875rem] font-mono text-[var(--text-muted)]">
+                      Rev. {seg.revisione}
+                    </span>
+                    {seg.categorie.map((c: any) => (
+                      <span key={c.categoria.id} className="badge badge-categoria">
+                        {c.categoria.nome}
+                      </span>
+                    ))}
+                  </div>
+
+                  <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                    <Link href={`/segnalazioni/${seg.id}`} className="hover:text-[var(--blue-primary)] hover:underline">
+                      {seg.descrizione}
+                    </Link>
+                  </h3>
+
+                  <div className="flex items-center gap-3 text-xs text-[var(--text-muted)] mt-1.5">
+                    <span>Inserita il {new Date(seg.creata_il).toLocaleDateString('it-IT')}</span>
+                    <span>&bull;</span>
+                    <span>Sostegni ricevuti: <strong>{seg._count.sostegni}</strong></span>
+                  </div>
+                </div>
+
+                <div className="shrink-0 self-start sm:self-center">
+                  <Link
+                    href={`/segnalazioni/${seg.id}`}
+                    className="btn btn-secondary btn-sm"
+                  >
+                    Visualizza scheda
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </main>
   );
 }

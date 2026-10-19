@@ -1,156 +1,231 @@
 import Link from 'next/link';
 import { getCurrentUser } from '@/actions/auth';
-import { getClassificaSegnalazioni } from '@/lib/domain/segnalazioni';
+import { getSegnalazioniPubbliche } from '@/lib/domain/segnalazioni';
+
+function StatoBadge({ stato }: { stato: string }) {
+  const map: Record<string, string> = {
+    RICEVUTA: 'badge badge-ricevuta',
+    PRESA_IN_CARICO: 'badge badge-carico',
+    INVIATA_AI_CANDIDATI: 'badge badge-candidati',
+    RITIRATA: 'badge badge-ritirata',
+  };
+  const label: Record<string, string> = {
+    RICEVUTA: 'Ricevuta',
+    PRESA_IN_CARICO: 'In carico al comitato',
+    INVIATA_AI_CANDIDATI: 'Trasmessa ai candidati',
+    RITIRATA: 'Ritirata',
+  };
+  return <span className={map[stato] ?? 'badge badge-categoria'}>{label[stato] ?? stato.replace(/_/g, ' ')}</span>;
+}
 
 export default async function Home() {
   const user = await getCurrentUser();
-  const topSegnalazioni = await getClassificaSegnalazioni(3, 0);
+  let recenti: any[] = [];
+  try {
+    const res = await getSegnalazioniPubbliche({ pageSize: 4, ordinamento: 'piu_recenti' });
+    recenti = res.items;
+  } catch (err) {
+    console.error('Errore recupero segnalazioni recenti:', err);
+  }
 
   return (
-    <main className="flex-1 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col items-center">
-      {/* Hero Section */}
-      <div className="text-center max-w-3xl py-8">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold tracking-wide bg-blue-100 text-blue-800 uppercase mb-4">
-          <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-          Partecipazione Civica &amp; Trasparenza Territoriale
-        </span>
-        <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
-          La Nostra Città, Il Nostro Futuro
-        </h1>
-        <p className="mt-4 text-lg text-slate-600 max-w-2xl mx-auto">
-          Piattaforma civica indipendente per raccogliere, documentare e sostenere le priorità urbane del territorio prima delle consultazioni elettorali.
-        </p>
-
-        <div className="mt-8 flex flex-wrap gap-4 justify-center">
-          <Link
-            href="/segnalazioni"
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-sm transition-colors text-sm sm:text-base"
-          >
-            Esplora le Segnalazioni
-          </Link>
-          <Link
-            href="/mappa"
-            className="px-6 py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded-lg shadow-sm transition-colors text-sm sm:text-base"
-          >
-            Mappa del Territorio
-          </Link>
-          <Link
-            href="/classifica"
-            className="px-6 py-3 bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-800 font-semibold rounded-lg shadow-sm transition-colors text-sm sm:text-base"
-          >
-            Classifica Priorità
-          </Link>
-        </div>
-      </div>
-
-      {/* Top 3 Priorità */}
-      {topSegnalazioni.length > 0 && (
-        <section className="w-full mt-12">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">Priorità più sostenute</h2>
-              <p className="text-sm text-slate-500">Le segnalazioni con il maggior numero di sostegni verificati</p>
-            </div>
-            <Link href="/classifica" className="text-sm font-semibold text-blue-600 hover:text-blue-800">
-              Vedi classifica completa &rarr;
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {topSegnalazioni.map((s, index) => (
-              <div
-                key={s.id}
-                className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow relative overflow-hidden"
+    <main className="flex-1">
+      {/* ── INTRODUZIONE CONCRETA AL SERVIZIO ── */}
+      <section className="bg-[var(--bg-subtle)] border-b border-[var(--border-light)] py-10 sm:py-14" aria-labelledby="intro-title">
+        <div className="page-container">
+          <div className="max-w-3xl">
+            <h1 id="intro-title" className="page-title mb-3">
+              Segnala un problema. Segui i miglioramenti.
+            </h1>
+            <p className="subheading mb-6 max-w-2xl text-base">
+              Uno spazio civico trasparente per documentare le necessità del quartiere, raccogliere il sostegno 
+              dei residenti e presentare le priorità del territorio ai candidati alle consultazioni elettorali.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href={user ? "/dashboard#nuova-segnalazione" : "/login?redirect=/dashboard"}
+                className="btn btn-primary"
+                id="hero-invia-btn"
               >
-                <div className="absolute top-0 right-0 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">
-                  #{index + 1}
-                </div>
-                <div>
-                  <div className="flex flex-wrap gap-1.5 mb-2 pr-10">
-                    {s.categorie.map(cat => (
-                      <span key={cat} className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                        {cat}
-                      </span>
-                    ))}
-                  </div>
-                  <p className="text-slate-800 font-medium text-sm line-clamp-3 mt-1">
-                    {s.descrizione}
-                  </p>
-                </div>
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                  <span className="font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">
-                    ❤️ {s.totaleSostegniValidi} {s.totaleSostegniValidi === 1 ? 'sostegno' : 'sostegni'}
-                  </span>
-                  <Link
-                    href={`/segnalazioni/${s.id}`}
-                    className="font-semibold text-slate-600 hover:text-blue-600"
-                  >
-                    Dettagli &rarr;
-                  </Link>
-                </div>
-              </div>
-            ))}
+                Invia una segnalazione
+              </Link>
+              <Link href="/segnalazioni" className="btn btn-secondary">
+                Esplora le segnalazioni
+              </Link>
+            </div>
           </div>
-        </section>
-      )}
-
-      {/* Feature Highlights */}
-      <section className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 text-left w-full">
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
-          <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-lg mb-4">
-            ✓
-          </div>
-          <h3 className="font-semibold text-slate-900 text-lg">Integrità &amp; Trasparenza</h3>
-          <p className="mt-2 text-sm text-slate-600">
-            Ogni segnalazione, avanzamento e sostegno è tracciato atomicamente con audit storico append-only e vincoli relazionali certificati.
-          </p>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
-          <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-lg mb-4">
-            🔒
-          </div>
-          <h3 className="font-semibold text-slate-900 text-lg">Storage Privato e Media Sicuri</h3>
-          <p className="mt-2 text-sm text-slate-600">
-            I contenuti fotografici e video sono archiviati su storage protetto. Nessun file o metadato privato viene esposto senza autorizzazione.
-          </p>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
-          <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-lg mb-4">
-            ⚖️
-          </div>
-          <h3 className="font-semibold text-slate-900 text-lg">Supervisione &amp; Democrazia Civica</h3>
-          <p className="mt-2 text-sm text-slate-600">
-            Controllo delle decisioni concorrenti del comitato, categorie confermate a catalogo e classifica deterministica senza duplicazioni.
-          </p>
         </div>
       </section>
 
-      {/* Call to action */}
-      <section className="mt-16 w-full bg-gradient-to-r from-blue-700 to-indigo-800 rounded-2xl p-8 sm:p-10 text-white text-center shadow-md">
-        <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-          Fai sentire la tua voce per il futuro della città
-        </h2>
-        <p className="mt-3 text-blue-100 max-w-xl mx-auto text-sm sm:text-base">
-          Partecipa come cittadino verificato per inviare priorità documentate con foto e coordinate, e sostenere le istanze della tua comunità.
-        </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-4">
-          {user ? (
-            <Link
-              href="/dashboard"
-              className="px-6 py-3 bg-white text-blue-800 hover:bg-blue-50 font-semibold rounded-lg shadow-xs transition-colors"
-            >
-              Vai alla tua Dashboard
+      {/* ── SEGNALAZIONI RECENTI DEI CITTADINI ── */}
+      <section className="py-10 border-b border-[var(--border-light)]" aria-labelledby="recenti-title">
+        <div className="page-container">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 id="recenti-title" className="section-title">
+                Ultime segnalazioni pubblicate
+              </h2>
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                Verificate dal comitato di garanzia e aperte al sostegno dei cittadini
+              </p>
+            </div>
+            <Link href="/segnalazioni" className="text-xs font-semibold text-[var(--blue-primary)] hover:underline">
+              Vedi tutte &rarr;
             </Link>
+          </div>
+
+          {recenti.length === 0 ? (
+            <div className="empty-state">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">
+                Nessuna segnalazione ancora registrata
+              </p>
+              <p className="text-xs text-[var(--text-secondary)] mt-1 max-w-md mx-auto">
+                Sii il primo residente a segnalare una criticità o una proposta per la cura del territorio.
+              </p>
+              <Link
+                href={user ? "/dashboard#nuova-segnalazione" : "/login?redirect=/dashboard"}
+                className="btn btn-primary btn-sm mt-3 inline-flex"
+              >
+                Invia la prima segnalazione
+              </Link>
+            </div>
           ) : (
-            <Link
-              href="/register"
-              className="px-6 py-3 bg-white text-blue-800 hover:bg-blue-50 font-semibold rounded-lg shadow-xs transition-colors"
-            >
-              Registrati Gratuitamente
-            </Link>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {recenti.map((item) => (
+                <article
+                  key={item.id}
+                  className="panel flex flex-col justify-between hover:border-[var(--blue-primary-border)] transition-colors"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {item.categorie?.length > 0 ? (
+                          item.categorie.slice(0, 2).map((c: string, idx: number) => (
+                            <span key={idx} className="badge badge-categoria">
+                              {c}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="badge badge-categoria">Segnalazione civica</span>
+                        )}
+                      </div>
+                      <StatoBadge stato={item.stato_avanzamento} />
+                    </div>
+
+                    <h3 className="text-sm font-bold text-[var(--text-primary)] mb-2 line-clamp-2">
+                      <Link href={`/segnalazioni/${item.id}`} className="hover:text-[var(--blue-primary)] hover:underline">
+                        {item.descrizione}
+                      </Link>
+                    </h3>
+                  </div>
+
+                  <div className="border-t border-[var(--border-light)] pt-3 mt-3 flex items-center justify-between text-xs text-[var(--text-secondary)]">
+                    <div className="flex items-center gap-2">
+                      <span>Inserita il {new Date(item.creata_il).toLocaleDateString('it-IT')}</span>
+                      <span>&bull;</span>
+                      <span className="font-semibold text-[var(--text-primary)]">
+                        {item.totaleSostegniValidi} {item.totaleSostegniValidi === 1 ? 'sostegno' : 'sostegni'}
+                      </span>
+                    </div>
+                    <Link
+                      href={`/segnalazioni/${item.id}`}
+                      className="font-semibold text-[var(--blue-primary)] hover:underline"
+                    >
+                      Dettaglio
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
           )}
+        </div>
+      </section>
+
+      {/* ── COME FUNZIONA ── */}
+      <section id="come-funziona" className="py-12 bg-[var(--bg-subtle)] border-b border-[var(--border-light)]" aria-labelledby="funziona-title">
+        <div className="page-container">
+          <div className="max-w-2xl mb-8">
+            <h2 id="funziona-title" className="section-title mb-2">
+              Come funziona la piattaforma
+            </h2>
+            <p className="text-sm text-[var(--text-secondary)]">
+              Un percorso semplice, tracciato e rigoroso che tutela sia i cittadini sia la qualità delle segnalazioni.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="panel bg-white">
+              <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--blue-primary-light)] text-[var(--blue-primary)] font-bold text-xs flex items-center justify-center mb-3">
+                1
+              </div>
+              <h3 className="text-sm font-bold text-[var(--text-primary)] mb-1">
+                Documenta e invia
+              </h3>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                Descrivi la situazione, indica la posizione precisa sulla mappa e carica eventuali foto a supporto.
+              </p>
+            </div>
+
+            <div className="panel bg-white">
+              <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--blue-primary-light)] text-[var(--blue-primary)] font-bold text-xs flex items-center justify-center mb-3">
+                2
+              </div>
+              <h3 className="text-sm font-bold text-[var(--text-primary)] mb-1">
+                Verifica del comitato
+              </h3>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                Il comitato verifica la conformità alle linee guida e l’assenza di contenuti lesivi prima della pubblicazione.
+              </p>
+            </div>
+
+            <div className="panel bg-white">
+              <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--blue-primary-light)] text-[var(--blue-primary)] font-bold text-xs flex items-center justify-center mb-3">
+                3
+              </div>
+              <h3 className="text-sm font-bold text-[var(--text-primary)] mb-1">
+                Sostegno dei residenti
+              </h3>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                I cittadini con account verificato possono esprimere il loro sostegno per far emergere i temi prioritari.
+              </p>
+            </div>
+
+            <div className="panel bg-white">
+              <div className="w-7 h-7 rounded-[var(--radius-sm)] bg-[var(--blue-primary-light)] text-[var(--blue-primary)] font-bold text-xs flex items-center justify-center mb-3">
+                4
+              </div>
+              <h3 className="text-sm font-bold text-[var(--text-primary)] mb-1">
+                Presentazione pubblica
+              </h3>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                Le segnalazioni con maggiore rilevanza vengono raggruppate e portate all’attenzione dei candidati locali.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── RUOLO DEL COMITATO CIVICO DI GARANZIA ── */}
+      <section className="py-10" aria-labelledby="comitato-title">
+        <div className="page-container">
+          <div className="panel-subtle flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="max-w-2xl">
+              <h2 id="comitato-title" className="text-base font-bold text-[var(--text-primary)] mb-1">
+                Il ruolo del Comitato Civico di Garanzia
+              </h2>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                Il comitato è formato da cittadini volontari indipendenti. Si occupa di verificare la pertinenza territoriale 
+                delle richieste, confermare le categorie corrette e garantire che ogni decisione sia motivata e registrata 
+                in un registro immutabile. <strong>La moderazione non certifica la risoluzione dei lavori</strong>, ma assicura 
+                un dibattito corretto e documentato.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <Link href="/classifica" className="btn btn-secondary btn-sm">
+                Consulta le priorità
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
     </main>

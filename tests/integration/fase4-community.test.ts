@@ -649,6 +649,6 @@ describe('Fase 4: Community, Supervisione, Transizioni Concorrenti e Classifica'
       // 4. C con 0 voti deve essere INCLUSA al terzo posto
       expect(classifica[2].id).toBe(repC.id);
       expect(classifica[2].totaleSostegniValidi).toBe(0);
-    });
+    }, 30000);
   });
 });

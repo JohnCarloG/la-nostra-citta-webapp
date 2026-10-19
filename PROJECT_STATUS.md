@@ -2,15 +2,15 @@
 
 **Progetto**: La Nostra Città, Il Nostro Futuro  
 **Target Autorizzato**: Next.js 16 (App Router) + Prisma ORM (5.22.0) + MySQL 8.4 su Aiven  
-**Stato Globale**: **Fase 4 (Community e Supervisione) Completata e Collaudata con Successo** su Aiven MySQL (`la_nostra_citta_test`).  
-- **62/62 Unit Test passati**  
-- **32/32 Test di Integrazione DB superati** su Aiven live (inclusi i test formali di specifica **T05, T06, T11, T12, T13**)  
+**Stato Globale**: **Fase 4 (Community e Supervisione) e Fase 5 (Pipeline IA e Worker) Completate e Verificate con Test Automatici** su Aiven MySQL (`la_nostra_citta_test`).  
+- **78/78 Unit Test passati**  
+- **45/45 Test di Integrazione DB superati** su Aiven live (inclusi i test formali di specifica **T05, T06, T07, T08, T09, T10, T11, T12, T13, T14**)  
 - **12/12 Step E2E Auth superati**  
 - **16 Route di produzione** compilate con successo in Next.js  
 - **TypeScript**: 0 errori (`tsc --noEmit`)  
 - **ESLint**: 0 errori e 0 warning  
-- **Storage Privato e Media**: protetto tramite endpoint dedicato `/api/media/[id]` conforme alle regole di visibilità. Collaudo manuale upload fisico **RINVIATO alla fine** per scelta dell'operatore (non bloccante).  
-- **Moderazione IA**: rigorosamente **SOSPESA** (nessuna spesa o servizio esterno attivato).
+- **Storage Privato e Media**: protetto tramite endpoint dedicato `/api/media/[id]` con cache-control `no-cache, must-revalidate`. Collaudo manuale browser **RINVIATO al collaudo finale** per scelta dell'operatore (non bloccante).  
+- **Integrazione IA**: realizzata con **Adattatori Simulati Deterministici** (`DeterministicMockModerationAdapter`, `DeterministicMockClassificationAdapter`, `DeterministicMockMetadataAdapter`, `DeterministicMockCoherenceAdapter`). Nessuna chiamata esterna a pagamento o non autorizzata attivata.
 
 ---
 
@@ -56,20 +56,30 @@
 - **Area Operativa Comitato e Categorie Confermate (RF03, RF08, RF11, VI07, T06)**:
   - Dashboard riservata `/comitato` protetta da autorizzazione server-side.
   - Coda revisioni prioritarie per segnalazioni in stato `PENDENTE` o `IN_REVISIONE`.
-  - Transizioni di moderazione consentite:
-    - da `PENDENTE` o `IN_REVISIONE` a `APPROVATA` o `RIFIUTATA`.
-    - da `APPROVATA` a `IN_REVISIONE` (criticità).
-    - da `RIFIUTATA` a `IN_REVISIONE` (riapertura motivata).
-  - Transizioni di avanzamento consentite:
-    - da `RICEVUTA` a `PRESA_IN_CARICO` (richiede `APPROVATA`).
-    - da `PRESA_IN_CARICO` a `INVIATA_AI_CANDIDATI` (richiede `APPROVATA`).
-    - da qualunque stato ad avanzamento `RITIRATA` (con motivazione; stato terminale).
-  - **Controllo Concorrenza Ottimistica e Row-Level Lock**:
-    - Serializzazione con lock `FOR UPDATE` e verifica stringente su `expectedRevision` e `expectedState`. Due moderatori concorrenti: uno solo applica la decisione, il secondo riceve errore 409 `ConcurrencyConflictError`.
-  - **Gestione Categorie Confermate**: associazione M:N con `Categoria` a catalogo con validazione di unicità e appartenenza.
-- **Accesso Protetto ai Media senza Percorsi Fisici Esposti (VI06, VI10)**:
-  - Endpoint dedicato `/api/media/[id]`. Lo storage fisico `.private_storage/` resta protetto e inaccessibile da browser.
-  - La route verifica l'autorizzazione: serve il file con header corretti se la segnalazione è pubblica; per segnalazioni private, verifica sessione dell'autore o del comitato, altrimenti risponde 404 senza rivelare l'esistenza del file (T12).
+  - Transizioni di moderazione consentite e serializzazione con lock `FOR UPDATE` e controllo di versione/stato ottimistico.
+  - Gestione categorie confermate associata alla tabella M:N `SegnalazioneCategoria`.
+- **Accesso Protetto ai Media con Controllo Cache (VI06, VI10)**:
+  - Endpoint dedicato `/api/media/[id]`.
+  - Cache revalidation rigorosa: `Cache-Control: public, no-cache, must-revalidate` (se pubblica) e `private, no-cache, no-store, must-revalidate` (se privata), impedendo la persistenza di media ritirati in cache intermedie o pubbliche senza rivalutazione dei permessi sul server.
+
+### Fase 5 - Pipeline IA, Worker Asincrono, Policy Conservativa e Protezione Concorrenza (COMPLETATA)
+- **Architettura a 4 Moduli (05 riga 22-26)**:
+  - `ModerationAdapter` (NLP): verdict `ALLOW`/`REVIEW`/`BLOCK`, reasons, score, model/policy version.
+  - `ClassificationAdapter` (Multi-label): suggerimenti categorie con confidenza e validazione schema catalogo ammesso (scarto duplicati e codici inesistenti, T08). Categorie assenti non bloccano l'approvazione (T07).
+  - `MetadataAdapter` (EXIF): estrazione coordinate e stato `SUCCESS`/`NO_EXIF`/`UNSUPPORTED` (T04/T09).
+  - `CoherenceAdapter` (Visivo-Testuale): verdict `CONSISTENT`/`UNCERTAIN`/`INCONSISTENT`/`UNSUPPORTED`. Video non supportato inviato a `IN_REVISIONE` con dichiarazione esplicita (T09).
+- **Elaborazione Fuori Transazione DB**:
+  - Chiamate ad adattatori e calcolo hash sha256 (`calculateInputHash`) eseguiti interamente **fuori da qualsiasi transazione database aperta**.
+- **Scrittura Atomica e Idempotente (`eseguiAnalisiSegnalazione`)**:
+  - Lock `FOR UPDATE` su `Segnalazione`.
+  - Controllo revisione superata (T10): se la segnalazione è stata modificata a revisione superiore (`modificaSegnalazione`), il risultato viene marcato `OBSOLETE` e non tocca lo stato corrente.
+  - Preservazione decisione umana (T10): se `stato_moderazione !== 'PENDENTE'`, l'override umano è sovrano e non viene alterato (`SKIPPED_HUMAN_OVERRIDE`).
+  - Idempotenza garantita da `upsert` su chiave univoca `chiave_idempotenza` in `AnalisiIa`.
+  - Policy conservativa: `BLOCK` -> `RIFIUTATA`; `ALLOW` + tutti media `CONSISTENT` -> `APPROVATA`; `REVIEW`, timeout, provider offline, video non supportato o incoerenza visiva -> `IN_REVISIONE`.
+- **Worker Asincrono Outbox (`src/lib/ia/worker.ts`) (T14)**:
+  - Acquisizione concorrente dei job tramite `SELECT ... FOR UPDATE SKIP LOCKED` su MySQL 8.4.
+  - Heartbeat lock di 5 minuti per evitare riacquisizione concorrente in caso di crash.
+  - Retry limitati con backoff esponenziale. Raggiunto il limite `MAX_WORKER_RETRIES` (3), applicazione della policy conservativa a `IN_REVISIONE` e marcatura del job come gestito.
 
 ---
 
@@ -77,8 +87,8 @@
 
 | Suite di Verifica | Obiettivo / Test Coperti | Esito Reale |
 | :--- | :--- | :--- |
-| **Unit Test (Vitest)** | 14 auth, 14 segnalazioni, 10 guardie DB, 5 rate-limiter, 5 email-transport, 11 mime-validator, 3 storage-provider | **62/62 SUPERATI (100%)** |
-| **Integrazione DB Aiven** | MySQL InnoDB su `la_nostra_citta_test`: 6 auth-db, 7 segnalazioni-db, 8 uploads-db, 11 fase4-community (**T05, T06, T11, T12, T13**) | **32/32 SUPERATI (100%)** |
+| **Unit Test (Vitest)** | 14 auth, 14 segnalazioni, 10 guardie DB, 5 rate-limiter, 5 email-transport, 11 mime-validator, 3 storage-provider, 16 ia-pipeline | **78/78 SUPERATI (100%)** |
+| **Integrazione DB Aiven** | MySQL InnoDB su `la_nostra_citta_test`: 6 auth-db, 7 segnalazioni-db, 8 uploads-db, 11 fase4-community, 13 fase5-ia (**T05, T06, T07, T08, T09, T10, T11, T12, T13, T14**) | **45/45 SUPERATI (100%)** |
 | **E2E Auth Script** | Ciclo end-to-end su Aiven: registrazione, verifica, login, cambio password e revoca sessioni | **12/12 SUPERATI (100%)** |
 | **TypeScript Typecheck** | `tsc --noEmit` su intero progetto | **0 ERRORI** |
 | **ESLint** | Regole Next.js e TypeScript | **0 ERRORI, 0 WARNING** |
@@ -88,8 +98,7 @@
 
 ## Limiti Aperti e Funzionalità Non Implementate (Dichiarati Esplicitamente)
 
-1. **Collaudo Manuale Upload**: implementato a livello di endpoint, validazione, storage e test automatici DB; il collaudo manuale tramite form browser resta **rinviato alla fine per scelta dell'operatore** e non blocca la Fase 4.
-2. **Moderazione IA (Fase 5)**: rigorosamente **SOSPESA**. Nessun modello esterno o servizio a pagamento è stato attivato.
+1. **Collaudo Manuale Browser**: implementato a livello di dominio, action, API, UI e test automatici; il collaudo manuale browser resta **rinviato al collaudo finale** per scelta dell'operatore (non bloccante).
+2. **Integrazione IA Reale con Provider a Pagamento**: l'architettura dei 4 moduli e i contratti sono implementati e collaudati tramite **adattatori simulati deterministici** per garantire riproducibilità in CI e assenza di costi imprevisti. L'attivazione di chiamate a modelli commerciali/a pagamento richiede esplicita configurazione autorizzata.
 3. **Predisposizione Storage S3**: solo architetturale via interfaccia `StorageProvider`. Nessun adapter S3 sviluppato.
-4. **Worker di Retry Asincrono**: i campi `tentativi` e `prossimo_tentativo_il` in `Outbox` e `AnalisiIa` sono predisposizioni di schema.
-5. **Rimozione Media**: la cancellazione dei singoli media da segnalazioni pubblicate è non implementata nel dominio per tutelare l'integrità probatoria.
+4. **Rimozione Media**: la cancellazione dei singoli media da segnalazioni pubblicate è non implementata nel dominio per tutelare l'integrità probatoria.

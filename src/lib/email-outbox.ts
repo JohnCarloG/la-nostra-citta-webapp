@@ -225,3 +225,124 @@ export async function processSingleEmailOutboxJob(): Promise<{
     return { processed: true, outcome: 'FAILED_RETRY' };
   }
 }
+
+/**
+ * Acquisisce in modo mirato e atomico un job Outbox email specifico per ID.
+ * Non tocca altri job pendenti nella coda.
+ */
+export async function claimEmailOutboxJobById(jobId: string): Promise<{
+  id: string;
+  payload_json: string;
+  tentativi: number;
+} | null> {
+  return prisma.$transaction(async (tx) => {
+    const jobs = await tx.$queryRaw<Array<{
+      id: string;
+      payload_json: string;
+      tentativi: number;
+    }>>`
+      SELECT id, payload_json, tentativi
+      FROM Outbox
+      WHERE id = ${jobId}
+        AND tipo_evento = 'INVIO_EMAIL'
+        AND elaborata_il IS NULL
+      LIMIT 1
+      FOR UPDATE
+    `;
+
+    if (jobs.length === 0) return null;
+
+    const job = jobs[0];
+    const tentativi = job.tentativi + 1;
+
+    await tx.$executeRaw`
+      UPDATE Outbox
+      SET tentativi = ${tentativi},
+          prossimo_tentativo_il = DATE_ADD(NOW(), INTERVAL 5 MINUTE)
+      WHERE id = ${job.id}
+    `;
+
+    return {
+      id: job.id,
+      payload_json: job.payload_json,
+      tentativi
+    };
+  });
+}
+
+/**
+ * Elabora esclusivamente il job Outbox specificato, senza processare la coda globale.
+ */
+export async function processEmailOutboxJobById(jobId: string): Promise<{
+  processed: boolean;
+  outcome: 'SUCCESS' | 'FAILED_RETRY' | 'FAILED_MAX_RETRIES' | 'JOB_NOT_FOUND' | 'ALREADY_PROCESSED';
+  error?: string;
+}> {
+  const existing = await prisma.outbox.findUnique({
+    where: { id: jobId },
+    select: { id: true, elaborata_il: true, tipo_evento: true }
+  });
+
+  if (!existing || existing.tipo_evento !== 'INVIO_EMAIL') {
+    return { processed: false, outcome: 'JOB_NOT_FOUND', error: `Job ${jobId} non trovato o non di tipo INVIO_EMAIL` };
+  }
+
+  if (existing.elaborata_il !== null) {
+    return { processed: false, outcome: 'ALREADY_PROCESSED', error: `Job ${jobId} già elaborato il ${existing.elaborata_il.toISOString()}` };
+  }
+
+  const job = await claimEmailOutboxJobById(jobId);
+  if (!job) {
+    return { processed: false, outcome: 'JOB_NOT_FOUND', error: `Impossibile acquisire il lock sul job ${jobId}` };
+  }
+
+  let payload: EmailJobPayload;
+  try {
+    payload = JSON.parse(job.payload_json);
+  } catch {
+    await prisma.outbox.update({
+      where: { id: job.id },
+      data: { elaborata_il: new Date() }
+    });
+    return { processed: true, outcome: 'FAILED_MAX_RETRIES', error: 'Payload JSON malformato' };
+  }
+
+  const sendRes = await emailTransport.sendEmail(
+    payload.to,
+    payload.subject,
+    payload.body,
+    payload.token
+  );
+
+  if (sendRes.success && sendRes.accepted) {
+    await prisma.outbox.update({
+      where: { id: job.id },
+      data: {
+        elaborata_il: new Date(),
+        prossimo_tentativo_il: null
+      }
+    });
+    return { processed: true, outcome: 'SUCCESS' };
+  }
+
+  if (job.tentativi >= MAX_EMAIL_RETRIES) {
+    await prisma.outbox.update({
+      where: { id: job.id },
+      data: {
+        elaborata_il: new Date(),
+        prossimo_tentativo_il: null
+      }
+    });
+    return { processed: true, outcome: 'FAILED_MAX_RETRIES', error: sendRes.error };
+  } else {
+    const backoffSeconds = Math.pow(2, job.tentativi) * 30;
+    await prisma.outbox.update({
+      where: { id: job.id },
+      data: {
+        prossimo_tentativo_il: new Date(Date.now() + backoffSeconds * 1000)
+      }
+    });
+    return { processed: true, outcome: 'FAILED_RETRY', error: sendRes.error };
+  }
+}
+

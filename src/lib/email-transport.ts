@@ -181,7 +181,13 @@ export class SmtpEmailTransport implements IEmailTransport {
       };
     }
 
-    const from = process.env.EMAIL_FROM || 'La Nostra Città <noreply@lanostracitta.it>';
+    const defaultFrom = process.env.SMTP_USER ? `La Nostra Città <${process.env.SMTP_USER}>` : undefined;
+    const from = process.env.EMAIL_FROM || defaultFrom;
+    if (!from) {
+      const err = 'Configurazione mittente incompleta: definire EMAIL_FROM o SMTP_USER.';
+      console.warn(`[SMTP TRANSPORT WARN] ${err}`);
+      return { success: false, accepted: false, error: err };
+    }
     const baseUrl = process.env.APP_URL || 'http://localhost:3000';
     let link: string | undefined = undefined;
 

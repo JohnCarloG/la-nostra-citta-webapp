@@ -1,3 +1,6 @@
+import { loadAppEnv } from '../src/lib/env-loader';
+loadAppEnv();
+
 import nodemailer from 'nodemailer';
 import { parseSmtpSecure } from '../src/lib/email-transport';
 
@@ -14,7 +17,8 @@ const SANDBOX_HOSTS = [
 ];
 
 async function main() {
-  const recipient = process.argv[2] || process.env.SMTP_CHECK_TO;
+  const cliRecipient = process.argv.slice(2).find(arg => arg !== '--' && !arg.startsWith('--'));
+  const recipient = (cliRecipient || process.env.SMTP_CHECK_TO || '').trim() || undefined;
 
   console.log('====================================================');
   console.log(' DIAGNOSTICA CONFIGURAZIONE SMTP - LA NOSTRA CITTÀ');
@@ -25,7 +29,13 @@ async function main() {
   const secure = parseSmtpSecure(process.env.SMTP_SECURE, port);
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
-  const from = process.env.EMAIL_FROM || 'La Nostra Città <noreply@lanostracitta.it>';
+  const defaultFrom = user ? `La Nostra Città <${user}>` : undefined;
+  const from = process.env.EMAIL_FROM || defaultFrom;
+
+  if (!from) {
+    console.error('\n[ERRORE] Mittente non configurato: definire EMAIL_FROM o SMTP_USER.');
+    process.exit(1);
+  }
 
   console.log('1. TRASPORTO EFFETTIVO:');
   console.log(`   - Driver: Nodemailer SmtpTransport`);

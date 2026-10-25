@@ -1,3 +1,6 @@
+import { loadAppEnv } from '../src/lib/env-loader';
+loadAppEnv();
+
 import path from 'path';
 import { prisma } from '../src/lib/db';
 

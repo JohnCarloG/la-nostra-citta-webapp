@@ -87,9 +87,14 @@
 
 | Suite di Verifica | Obiettivo / Test Coperti | Esito Reale |
 | :--- | :--- | :--- |
-| **Unit Test (Vitest)** | 19 auth (incl. CF, omocodia, quartiere e duplicati), 10 codice-fiscale, 14 segnalazioni, 10 guardie DB, 5 rate-limiter, 5 email-transport, 11 mime-validator, 3 storage-provider, 17 ia-pipeline | **94/94 SUPERATI (100%)** |
+| **Unit Test (Vitest)** | 106 test preesistenti (auth, CF, segnalazioni, guardie DB, rate-limiter, email, mime, storage, IA, mappa, placeholder) + 8 test mirati nuovo worker | **114/114 SUPERATI (100%)** |
 | **Integrazione DB Aiven** | MySQL InnoDB su `la_nostra_citta_test`: 6 auth-db, 7 segnalazioni-db, 8 uploads-db, 11 fase4-community, 13 fase5-ia (**T05, T06, T07, T08, T09, T10, T11, T12, T13, T14**) | **45/45 SUPERATI (100%)** |
+| **Collaudo SMTP Reale (Gmail)** | Verifica connessione (`smtp.gmail.com:465`) e invio diagnostico controllato a casella reale | **SUPERATO CON RICEZIONE CONFERMATA** (MessageId `<ad170106-c920-5099-bdad-a72066da2cd2@gmail.com>`, recapito confermato da operatore) |
+| **TLS Prisma strict su macOS** | Connessione database MySQL con verifica rigorosa certificato CA e hostname | **BLOCCATO** (Bloccato su macOS da Apple Security Framework con errSecInvalidExtendedKeyUsage `-67609` a causa dell'assenza di `serverAuth` nel certificato del server Aiven. Convalidato con client TLS OpenSSL standard) |
+| **Verifica Account Reale via App** | Flusso applicativo completo `/register` o `/resend-verification` con email reale e token | **ANCORA DA COLLAUDARE** (Worker isolato con modalità dry-run e consenso `--send` predisposto per `la_nostra_citta_test`, in attesa di sblocco TLS strict o runtime Linux) |
 | **E2E Auth Script** | Ciclo end-to-end su Aiven: registrazione, verifica, login, cambio password e revoca sessioni | **12/12 SUPERATI (100%)** |
+
+
 | **TypeScript Typecheck** | `tsc --noEmit` su intero progetto | **0 ERRORI** |
 | **ESLint** | Regole Next.js e TypeScript | **8 errori residui preesistenti su file dashboard/comitato (nessun errore nei nuovi file)** |
 | **Build Produzione** | `next build` Turbopack | **16 ROUTE PRONTE (rotta /anteprima rimossa con successo)** |
@@ -99,7 +104,8 @@
 
 ## Limiti Aperti e Funzionalità Non Implementate (Dichiarati Esplicitamente)
 
-1. **Trasporto Email SMTP Operatore**: Adapter SMTP reale (`SmtpEmailTransport`) implementato tramite `nodemailer`, Outbox dedicato (`INVIO_EMAIL`) con retry esponenziale. In assenza di credenziali SMTP operatore in `.env`, le email vengono correttamente accodate nell'Outbox e segnalate all'utente senza falsi messaggi di consegna.
+1. **Trasporto Email SMTP Operatore**: Collaudo del trasporto SMTP reale (`SmtpEmailTransport`) su Gmail completato con successo: connessione TLS verificata, messaggio diagnostico accettato dal server e recapito in inbox confermato dall'operatore. Il worker Outbox è stato integrato con la modalità mirata (`--job-id <id>`) per l'elaborazione selettiva anti-arretrati. Verifica del flusso completo di attivazione account via app in attesa di connettività DB Aiven.
+
 2. **Collaudo Manuale Browser**: implementato a livello di dominio, action, API, UI e test automatici; il collaudo manuale browser resta **rinviato al collaudo finale** per scelta dell'operatore (non bloccante).
 3. **Integrazione IA Reale con Provider a Pagamento**: l'architettura dei 4 moduli e i contratti sono implementati e collaudati tramite **adattatori simulati deterministici** per garantire riproducibilità in CI e assenza di costi imprevisti. L'attivazione di chiamate a modelli commerciali/a pagamento richiede esplicita configurazione autorizzata.
 4. **Predisposizione Storage S3**: solo architetturale via interfaccia `StorageProvider`. Nessun adapter S3 sviluppato.

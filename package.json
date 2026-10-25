@@ -16,9 +16,13 @@
     "test:e2e:auth": "tsx scripts/test-auth-e2e.ts",
     "start:test": "tsx scripts/start-test-server.ts",
     "cleanup:uploads": "tsx scripts/cleanup-uploads.ts",
-    "smtp:check": "tsx --env-file=.env.local scripts/smtp-check.ts",
-    "worker:email": "tsx --env-file=.env.local scripts/email-worker.ts"
+    "smtp:check": "tsx scripts/smtp-check.ts",
+    "worker:email": "tsx scripts/email-worker.ts",
+    "worker:email:test": "tsx scripts/email-worker-test.ts",
+    "diagnose:outbox": "tsx scripts/diagnose-outbox.ts"
   },
+
+
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",

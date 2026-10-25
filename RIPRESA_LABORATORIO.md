@@ -14,29 +14,61 @@ monitorare segnalazioni civiche. Include gestione transazionale forte, moderazio
 
 ---
 
-## Stato di Avanzamento (checkpoint 2026-10-12)
-
-| Fase | Stato | Dettaglio |
-| :--- | :--- | :--- |
-| Fase 0 — Requisiti | COMPLETATA | Requisiti in `docs/progetto/` |
-| Fase 1 — Schema MySQL | COMPLETATA | Migrazione `20261006000000_init_mysql` applicata, 7 CHECK attivi, FK composta RESTRICT |
-| Fase 2 — Dominio, Auth, UI | COMPLETATA e collaudata | 62/62 unit, 21/21 integrazione, 12/12 E2E auth |
-| Fase 3 — Upload Fisico | IMPLEMENTATA (storage locale) | Collaudo manuale NON ESEGUITO |
-| Moderazione IA | SOSPESA | Nessuna chiamata esterna attiva |
-| S3 | Solo interfaccia | Nessun adapter implementato |
+---
 
 ---
 
-## Esiti Test (ultima esecuzione dichiarata)
+## Stato Verifiche Attuale e Blocco TLS macOS
 
-- **Unit Test (Vitest)**: **62/62 superati**
-  - 14 auth, 14 segnalazioni, 10 guardie DB, 5 rate-limiter, 5 email-transport
-  - 11 mime-validator strutturale (JPEG/PNG/WebP/MP4 chunk, EXIF malformato), 3 storage-provider
-- **Integrazione DB Aiven**: **21/21 superati** su `la_nostra_citta_test`
-  - 6 auth-db, 7 segnalazioni-db, 8 uploads-db
-- **E2E Auth (script)**: **12/12 step superati**
-- **Build Next.js**: 0 errori, 8 route pronte
-- **TypeScript / ESLint**: 0 errori, 0 warning
+- **SMTP con Ricezione Reale**: **SUPERATO** (Singolo invio diagnostico verso casella concordata accettato da Gmail SMTP e recapito confermato dall'operatore. Nessun ulteriore invio diagnostico necessario).
+- **Flusso Completo di Verifica Email Reale**: **NON ESEGUITO** (In attesa dello sblocco della connessione database con TLS strict per eseguire l'attivazione end-to-end tramite app).
+- **Unit Test (Vitest)**: **114/114 SUPERATI (100%)**
+  - **106 test preesistenti**: auth, codice fiscale, segnalazioni, guardie DB, rate-limiter, email-transport, mime-validator, storage provider, pipeline IA, layout mappa, nav-links, media-placeholder.
+  - **8 test specifici del nuovo worker**: validazione parametri, rifiuto live DB errato, blocco destinatario non autorizzato, verifica modalità dry-run senza modifiche Outbox, invio controllato solo con `--send`.
+- **TLS Prisma strict su macOS**: **BLOCCATO**
+  - Il certificato inviato dal cluster MySQL Aiven omette l'estensione standard `X509v3 Extended Key Usage: serverAuth` (`1.3.6.1.5.5.7.3.1`).
+  - Su macOS, Apple Security Framework (`native-tls` via Rust/Prisma) applica la policy stringente di sistema e rifiuta la connessione con errore `errSecInvalidExtendedKeyUsage` (codice `-67609`), traducendosi in `Error opening a TLS connection: The certificate was not trusted.`
+  - Con client OpenSSL/Node.js nativo con `rejectUnauthorized: true`, la verifica CA e hostname ha pieno successo.
+
+---
+
+## Due Percorsi Disponibili per la Ripresa (Da Verificare)
+
+> [!NOTE]
+> Il supporto Aiven e l'ambiente Linux sono **due percorsi tecnici da verificare**, non soluzioni già collaudate sulla postazione.
+
+### Percorso A — Risoluzione Certificato tramite Supporto Aiven (Da Verificare)
+1. Richiedere al supporto Aiven l'eventuale emissione/aggiornamento del certificato TLS per il cluster MySQL con l'estensione standard:
+   `X509v3 Extended Key Usage: TLS Web Server Authentication (1.3.6.1.5.5.7.3.1)`
+2. Se supportato e aggiornato da Aiven, la verifica rigorosa di macOS Apple Security Framework passerà con `sslaccept=strict`.
+3. Verificare con: `npm run verify:db`.
+
+### Percorso B — Esecuzione del Progetto in Ambiente Linux con TLS strict (Da Verificare)
+1. Eseguire l'applicazione o il server di test in un ambiente o container Linux (dove Prisma usa OpenSSL al posto di Apple Security Framework).
+2. Generare Prisma Client per Linux (`npx prisma generate`), montare `ca.pem` in sola lettura e mantenere `DATABASE_URL` con `sslaccept=strict`.
+3. Verificare la connessione rigorosa con OpenSSL su Linux senza bypass.
+
+---
+
+## Procedura per il Collaudo della Verifica Email (su `la_nostra_citta_test`)
+
+Quando la connettività TLS strict al database sarà ripristinata:
+1. **Configurazione Origine e Destinatario**:
+   - `APP_URL` **deve coincidere con l'origine effettiva dell'app di collaudo**, attualmente `http://localhost:3001` (avviata tramite `npm run start:test`).
+   - Configurare in `.env.local` la variabile obbligatoria per il destinatario autorizzato:
+     `SMTP_TEST_ALLOWED_RECIPIENT="<casella-operatore>"`
+2. Generare il token e il job Outbox tramite la registrazione o reinvio sull'app di collaudo (`http://localhost:3001`).
+3. Eseguire la **verifica ispettiva (dry-run)** (nessun invio, nessuna modifica alla tabella Outbox):
+   ```bash
+   npm run worker:email:test -- --job-id <ID_JOB>
+   ```
+4. Eseguire l'**invio reale controllato** (richiede consenso esplicito `--send`):
+   ```bash
+   npm run worker:email:test -- --job-id <ID_JOB> --send
+   ```
+5. Confermare ricezione email reale, aprire `/verify?token=...` e verificare che la richiesta GET non attivi l'utente, quindi confermare via form POST e verificare il login.
+
+
 
 ---
 

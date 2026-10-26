@@ -25,25 +25,25 @@
 
   "dependencies": {
     "@prisma/client": "^5.22.0",
-    "bcryptjs": "^3.0.3",
-    "next": "16.3.8",
-    "nodemailer": "^10.1.7",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
-  },
-  "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^26.6.4",
     "@types/nodemailer": "^8.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "bcryptjs": "^3.0.3",
+    "next": "16.3.8",
+    "nodemailer": "^10.1.7",
+    "prisma": "^5.22.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "devDependencies": {
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
-    "prisma": "^5.22.0",
-    "tailwindcss": "^4",
     "tsx": "^4.23.15",
-    "typescript": "^5",
     "vitest": "^5.0.3"
   }
 }

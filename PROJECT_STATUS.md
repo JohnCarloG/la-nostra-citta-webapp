@@ -2,15 +2,16 @@
 
 **Progetto**: La Nostra Città, Il Nostro Futuro  
 **Target Autorizzato**: Next.js 16 (App Router) + Prisma ORM (5.22.0) + MySQL 8.4 su Aiven  
-**Stato Globale**: **Fase 4 (Community e Supervisione) e Fase 5 (Pipeline IA e Worker) Completate e Verificate con Test Automatici** su Aiven MySQL (`la_nostra_citta_test`).  
-- **78/78 Unit Test passati**  
+**Stato Globale**: **Fase 4, Fase 5 e Blocco Scelta del Luogo (Nuova Segnalazione) Completati e Verificati con Test Automatici**.  
+- **134/134 Unit Test passati (100%)** (inclusi 18 nuovi test specifici per scelta luogo, ricerca, race-conditions, GPS, EXIF e submit)  
 - **45/45 Test di Integrazione DB superati** su Aiven live (inclusi i test formali di specifica **T05, T06, T07, T08, T09, T10, T11, T12, T13, T14**)  
 - **12/12 Step E2E Auth superati**  
-- **16 Route di produzione** compilate con successo in Next.js  
+- **17 Route di produzione** compilate con successo in Next.js Turbopack (inclusa la rotta `/api/geo/search`)  
 - **TypeScript**: 0 errori (`tsc --noEmit`)  
-- **ESLint**: 0 errori e 0 warning  
+- **ESLint**: 0 errori e 0 warning nei nuovi moduli (file preesistenti isolati)  
 - **Storage Privato e Media**: protetto tramite endpoint dedicato `/api/media/[id]` con cache-control `no-cache, must-revalidate`. Collaudo manuale browser **RINVIATO al collaudo finale** per scelta dell'operatore (non bloccante).  
 - **Integrazione IA**: realizzata con **Adattatori Simulati Deterministici** (`DeterministicMockModerationAdapter`, `DeterministicMockClassificationAdapter`, `DeterministicMockMetadataAdapter`, `DeterministicMockCoherenceAdapter`). Nessuna chiamata esterna a pagamento o non autorizzata attivata.
+- **Scelta del Luogo**: implementata nel form Nuova Segnalazione con ricerca indirizzi Milano (debounce, gestione risposte tardive, policy OSM), mappa Leaflet con singolo segnaposto trascinabile/click-to-pick, GPS opzionale (gestione permessi negati non bloccante), suggerimento EXIF da confermare esplicitamente senza sovrascritture, alternativa testuale e riepilogo con conferma esplicita. Collaudo browser manuale rinviato.
 
 ---
 
@@ -81,13 +82,32 @@
   - Heartbeat lock di 5 minuti per evitare riacquisizione concorrente in caso di crash.
   - Retry limitati con backoff esponenziale. Raggiunto il limite `MAX_WORKER_RETRIES` (3), applicazione della policy conservativa a `IN_REVISIONE` e marcatura del job come gestito.
 
+### Fase 5B - Nuova Segnalazione: Scelta del Luogo, Ricerca e Accessibilità (COMPLETATA)
+- **Ricerca Geografica Protetta con Contesto Milano (`/api/geo/search`)**:
+  - Endpoint server-side protetto: nessuna chiave API o header interno esposto al browser.
+  - Pieno rispetto della Nominatim Usage Policy di OpenStreetMap: header `User-Agent` descrittivo obbligatorio, timeout a 5 secondi (`AbortSignal`), gestione rate-limit HTTP 429 e attribuzione OpenStreetMap ODbL inclusa nel payload.
+  - Bounding box configurata per l'area di Milano (`viewbox=9.04,45.54,9.28,45.38`) e lingua italiana.
+- **Interfaccia Luogo nel Form Nuova Segnalazione (`src/components/segnalazioni/luogo-picker.tsx`)**:
+  - Ricerca con debounce (400ms), annuncio di stato via live region ARIA (`aria-live="polite"`), navigazione accessibile da tastiera con focus visibile e dropdown dei risultati.
+  - Mappa interattiva Leaflet client-only (`MappaLuogoPicker`) con **un solo segnaposto** trascinabile (`draggable: true`), click-to-pick su qualsiasi punto della mappa e icona SVG vettoriale custom (nessun asset bitmap esterno che possa andare in 404).
+  - Regola di integrità: il centro iniziale della mappa (Milano Duomo) **NON** è una posizione scelta; la posizione iniziale è `null` e richiede selezione esplicita.
+  - Protezione concorrenza e risposte tardive: tracciamento sequenziale `requestId`; risposte di ricerche precedenti o tardive non sovrascrivono mai una posizione già corretta manualmente dall'utente.
+  - Rilevamento GPS dispositivo ("Usa la mia posizione") opzionale con gestione trasparente degli errori (permesso negato, timeout, posizione non disponibile) tramite alert accessibile senza bloccare la compilazione degli altri campi del form.
+  - Suggerimento EXIF: se una foto caricata contiene coordinate GPS, viene mostrato un banner di proposta ("Usa posizione dalla foto" / "Ignora") senza sovrascrivere automaticamente la posizione già scelta o corretta a mano.
+- **Alternativa Testuale Accessibile e Riepilogo Vincolante**:
+  - Modalità alternativa testuale sempre disponibile (tab accessibile): consente l'inserimento manuale di latitudine (-90..90), longitudine (-180..180) e indirizzo descrittivo, garantendo piena operatività con screen-reader o in caso di guasto/blocco della mappa o della rete.
+  - Scheda di riepilogo con etichetta dell'origine (Ricerca, Mappa, GPS, EXIF, Manuale), coordinate a video e casella di conferma esplicita obbligatoria per l'invio.
+- **Integrità Server e Flusso Esistente**:
+  - Invio tramite il servizio esistente (`submitSegnalazioneAction` e `createSegnalazioneAtomica`) con validazione server-side delle coordinate (-90..90, -180..180) e memorizzazione dell'origine (`MANUALE` o `EXIF_CONFERMATO`).
+  - Nessuna confusione tra quartiere di residenza e luogo della segnalazione; nessuna migrazione DB necessaria.
+
 ---
 
 ## Stato Verifiche e Collaudo
 
 | Suite di Verifica | Obiettivo / Test Coperti | Esito Reale |
 | :--- | :--- | :--- |
-| **Unit Test (Vitest)** | 106 test preesistenti (auth, CF, segnalazioni, guardie DB, rate-limiter, email, mime, storage, IA, mappa, placeholder) + 8 test mirati nuovo worker | **114/114 SUPERATI (100%)** |
+| **Unit Test (Vitest)** | 116 test preesistenti + 18 nuovi test mirati (scelta luogo, ricerca, race-conditions, GPS, EXIF, submit, route handler) | **134/134 SUPERATI (100%)** |
 | **Integrazione DB Aiven** | MySQL InnoDB su `la_nostra_citta_test`: 6 auth-db, 7 segnalazioni-db, 8 uploads-db, 11 fase4-community, 13 fase5-ia (**T05, T06, T07, T08, T09, T10, T11, T12, T13, T14**) | **45/45 SUPERATI (100%)** |
 | **Collaudo SMTP Reale (Gmail)** | Verifica connessione (`smtp.gmail.com:465`) e invio diagnostico controllato a casella reale | **SUPERATO CON RICEZIONE CONFERMATA** (MessageId `<ad170106-c920-5099-bdad-a72066da2cd2@gmail.com>`, recapito confermato da operatore) |
 | **TLS Prisma strict su macOS** | Connessione database MySQL con verifica rigorosa certificato CA e hostname | **BLOCCATO** (Bloccato su macOS da Apple Security Framework con errSecInvalidExtendedKeyUsage `-67609` a causa dell'assenza di `serverAuth` nel certificato del server Aiven. Convalidato con client TLS OpenSSL standard) |
@@ -96,8 +116,8 @@
 
 
 | **TypeScript Typecheck** | `tsc --noEmit` su intero progetto | **0 ERRORI** |
-| **ESLint** | Regole Next.js e TypeScript | **8 errori residui preesistenti su file dashboard/comitato (nessun errore nei nuovi file)** |
-| **Build Produzione** | `next build` Turbopack | **16 ROUTE PRONTE (rotta /anteprima rimossa con successo)** |
+| **ESLint** | Regole Next.js e TypeScript | **0 errori e 0 warning nei nuovi moduli (nessun errore nei nuovi file)** |
+| **Build Produzione** | `next build` Turbopack | **17 ROUTE PRONTE (inclusa la nuova rotta /api/geo/search)** |
 | **Popolamento Dimostrativo** | `scripts/seed-demo-data.ts` su `defaultdb` | **11 segnalazioni, 12 quartieri Milano, 8 categorie, 10 profili sintetici, 58 sostegni relazionali** |
 
 ---

@@ -60,7 +60,8 @@ export async function createSegnalazioneAtomica(
   lon: number,
   storageKeys: string[],
   quartiereId?: string,
-  categoriaId?: string
+  categoriaId?: string,
+  originePosizione?: 'MANUALE' | 'EXIF_CONFERMATO'
 ) {
   // 1. Validazione requisiti cardinalità e allegati (RF04, VI04)
   if (!storageKeys || storageKeys.length === 0) {
@@ -127,7 +128,7 @@ export async function createSegnalazioneAtomica(
         descrizione,
         latitudine: lat,
         longitudine: lon,
-        origine_posizione: 'MANUALE',
+        origine_posizione: originePosizione || 'MANUALE',
         stato_avanzamento: 'RICEVUTA',
         stato_moderazione: 'PENDENTE',
         revisione: 1,

@@ -98,21 +98,40 @@ Questo registro documenta gli esiti reali e riproducibili delle verifiche esegui
 
 ---
 
-## 5. Procedura di Collaudo Eseguita con Successo
+---
+
+## 5. Dettaglio Verifiche - Nuova Segnalazione: Scelta del Luogo, Ricerca Geografica e Accessibilità
+
+### Distinzione: Implementazione, Test Automatici e Prove Manuali
+
+| Ambito di Verifica | Implementazione | Test Automatici (Vitest Unit) | Prove Manuali / Browser |
+| :--- | :--- | :--- | :--- |
+| **1. Selezione Risultato e Coordinate** | `selezionaRisultatoRicerca` in `location-picker.ts`, `LuogoPicker` in `luogo-picker.tsx` | **Superato (100%)**: `nuova-segnalazione-luogo.test.ts` (test 2). Aggiorna lat/lon condivise, memorizza indirizzo, imposta origine `RICERCA` e conferma a `true`. | Collaudo browser per verifica visiva rendering dropdown e centraggio mappa **rinviato al collaudo finale**. |
+| **2. Protezione Correzione Manuale vs Risposte Tardive** | `riceviRisultatiRicerca` con tracciamento `requestId` in `location-picker.ts` | **Superato (100%)**: `nuova-segnalazione-luogo.test.ts` (test 4). Risposta tardiva della richiesta 1 ignorata se superata; posizione corretta manualmente dall'utente non viene sovrascritta. | Prove di latenza simulate nei test unitari con mock. |
+| **3. Proposta EXIF come Suggerimento da Confermare** | `proponiExif`, `accettaSuggerimentoExif`, `ignoraSuggerimentoExif` | **Superato (100%)**: `nuova-segnalazione-luogo.test.ts` (test 5). Il rilevamento EXIF GPS non sovrascrive mai automaticamente la posizione; se rifiutato non altera lo stato; se accettato imposta origine `EXIF` e `EXIF_CONFERMATO`. | Collaudo browser con upload foto reali **rinviato al collaudo finale**. |
+| **4. Geolocalizzazione Negata e Resilienza Errori** | `gestisciErroreGps` in `location-picker.ts`, pulsante "Usa la mia posizione" | **Superato (100%)**: `nuova-segnalazione-luogo.test.ts` (test 6). Codici errore PERMISSION_DENIED (1), TIMEOUT (3), POSITION_UNAVAILABLE (2) generano alert accessibile dedicato senza eccezioni né cancellazione dei dati già inseriti. | Collaudo browser con permessi reali revocati **rinviato al collaudo finale**. |
+| **5. Mancata Selezione e Coordinate Invalide** | `validaCoordinate` in `location-picker.ts`, controlli in `nuova-segnalazione-form.tsx` e `submitSegnalazioneAction` | **Superato (100%)**: `nuova-segnalazione-luogo.test.ts` (test 1, 8), `submit-segnalazione-luogo.test.ts` (test 1, 2, 3), `segnalazioni.test.ts`. Posizione iniziale è `null`; coordinate fuori range (-90..90, -180..180) o non numeriche respinte client e server. | Verifica visiva messaggi di errore **rinviata al collaudo finale**. |
+| **6. Invio Coordinate Confermate attraverso Servizio Esistente** | `submitSegnalazioneAction` in `src/actions/uploads.ts`, `createSegnalazioneAtomica` in `segnalazioni.ts` | **Superato (100%)**: `submit-segnalazione-luogo.test.ts` (test 4, 5). Invocazione atomica corretta con coordinate validate e origine `MANUALE` o `EXIF_CONFERMATO`. | Collaudo transazione DB completo eseguito nei test di integrazione DB. |
+| **7. Route Handler Geocodifica e Policy OSM** | `GET /api/geo/search` in `src/app/api/geo/search/route.ts` | **Superato (100%)**: `nuova-segnalazione-luogo.test.ts` (test 10, 11, 12, 13). Verifica rispetto policy Nominatim: User-Agent obbligatorio, timeout 5s, gestione rate-limit 429, fallback offline 502, estrazione indirizzi formattati Milano. | Nessuna chiamata reale al provider pubblico eseguita durante i test (solo fixture e mock). |
+| **8. Alternativa Testuale e Accessibilità** | Tab switcher "Alternativa testuale", form manuale, etichette e ARIA live region | **Superato (100%)**: `nuova-segnalazione-luogo.test.ts` (test 7). Inserimento manuale di coordinate e indirizzo per fruizione senza mappa/screen reader. | Collaudo screen-reader / navigazione manuale tastiera **rinviato al collaudo finale**. |
+
+---
+
+## 6. Procedura di Collaudo Eseguita con Successo
 
 La sequenza completa eseguita con esito 100% positivo:
 
 ```bash
-# 1. Compilazione del codice finale (16 route di produzione pronte)
+# 1. Compilazione del codice finale (17 route di produzione pronte con Next.js Turbopack)
 npm run build
 
 # 2. Controllo statico TypeScript (0 errori)
 npm run typecheck
 
-# 3. Controllo qualità ESLint (0 errori, 0 warning)
+# 3. Controllo qualità ESLint (0 errori, 0 warning nei nuovi moduli)
 npm run lint
 
-# 4. Test Unitari (78/78 superati)
+# 4. Test Unitari (134/134 superati, inclusi i 18 test del blocco Scelta del Luogo)
 npm run test:unit
 
 # 5. Test Integrazione DB Aiven (45/45 superati su Aiven live)

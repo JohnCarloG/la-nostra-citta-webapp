@@ -56,17 +56,25 @@ export async function submitSegnalazioneAction(formData: FormData): Promise<{
   const descrizione = (formData.get('descrizione') as string)?.trim();
   const latStr = formData.get('latitudine') as string;
   const lonStr = formData.get('longitudine') as string;
+  const originePosizioneRaw = formData.get('originePosizione') as string;
   const storageKeysRaw = formData.get('storageKeys') as string;
 
   if (!descrizione) {
     return { success: false, error: 'La descrizione della segnalazione è obbligatoria' };
   }
 
+  if (!latStr || !lonStr) {
+    return { success: false, error: 'La posizione geografica della segnalazione è obbligatoria' };
+  }
+
   const lat = parseFloat(latStr);
   const lon = parseFloat(lonStr);
-  if (isNaN(lat) || isNaN(lon)) {
-    return { success: false, error: 'Coordinate geografiche non valide' };
+  if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    return { success: false, error: 'Coordinate geografiche non valide (latitudine tra -90 e 90, longitudine tra -180 e 180)' };
   }
+
+  const originePosizione =
+    originePosizioneRaw === 'EXIF_CONFERMATO' ? 'EXIF_CONFERMATO' : 'MANUALE';
 
   let storageKeys: string[] = [];
   try {
@@ -85,7 +93,10 @@ export async function submitSegnalazioneAction(formData: FormData): Promise<{
       descrizione,
       lat,
       lon,
-      storageKeys
+      storageKeys,
+      undefined,
+      undefined,
+      originePosizione
     );
     return { success: true, segnalazioneId: seg.id };
   } catch (err: unknown) {

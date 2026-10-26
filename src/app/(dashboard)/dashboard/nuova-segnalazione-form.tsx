@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { submitSegnalazioneAction } from '@/actions/uploads';
+import LuogoPicker from '@/components/segnalazioni/luogo-picker';
+import { ExifSuggerimento } from '@/lib/geo/location-picker';
 
 interface UploadItem {
   id: string;
@@ -13,16 +15,28 @@ interface UploadItem {
   exifCoords?: { lat: number; lon: number };
 }
 
+interface SelectedLocation {
+  lat: number;
+  lon: number;
+  origine: 'MANUALE' | 'EXIF_CONFERMATO';
+  confermata: boolean;
+  indirizzo?: string;
+}
+
 export default function NuovaSegnalazioneForm() {
   const [descrizione, setDescrizione] = useState('');
-  const [lat, setLat] = useState('45.4642');
-  const [lon, setLon] = useState('9.1900');
+  const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
+  const [exifProposta, setExifProposta] = useState<ExifSuggerimento | null>(null);
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successId, setSuccessId] = useState<string | null>(null);
+
+  const handleLocationChange = useCallback((loc: SelectedLocation | null) => {
+    setSelectedLocation(loc);
+  }, []);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setError(null);
@@ -81,10 +95,13 @@ export default function NuovaSegnalazioneForm() {
 
       setUploads(prev => [...prev, item]);
 
-      // Se il file contiene coordinate GPS e i campi sono ai valori predefiniti, aggiorna le coordinate
-      if (res.data.exifCoords && lat === '45.4642' && lon === '9.1900') {
-        setLat(res.data.exifCoords.lat.toFixed(6));
-        setLon(res.data.exifCoords.lon.toFixed(6));
+      // Se il file contiene metadati EXIF GPS, presentalo come suggerimento da confermare (senza sovrascrivere automaticamente)
+      if (res.data.exifCoords) {
+        setExifProposta({
+          lat: res.data.exifCoords.lat,
+          lon: res.data.exifCoords.lon,
+          nomeFile: file.name,
+        });
       }
     }
 
@@ -100,24 +117,37 @@ export default function NuovaSegnalazioneForm() {
     e.preventDefault();
     setError(null);
 
-    const latNum = parseFloat(lat);
-    const lonNum = parseFloat(lon);
+    // 1. Validazione selezione e conferma del luogo
+    if (!selectedLocation) {
+      setError('È obbligatorio indicare il luogo della segnalazione tramite la ricerca indirizzi, la mappa interattiva o l’alternativa testuale.');
+      return;
+    }
+
+    if (!selectedLocation.confermata) {
+      setError('Conferma la selezione del luogo selezionando la casella di controllo nel riepilogo.');
+      return;
+    }
+
+    const latNum = selectedLocation.lat;
+    const lonNum = selectedLocation.lon;
 
     if (isNaN(latNum) || latNum < -90 || latNum > 90) {
-      setError('Inserisci una latitudine valida compresa tra -90 e 90.');
+      setError('La latitudine selezionata non è valida (deve essere tra -90 e 90).');
       return;
     }
 
     if (isNaN(lonNum) || lonNum < -180 || lonNum > 180) {
-      setError('Inserisci una longitudine valida compresa tra -180 e 180.');
+      setError('La longitudine selezionata non è valida (deve essere tra -180 e 180).');
       return;
     }
 
+    // 2. Validazione descrizione
     if (!descrizione.trim() || descrizione.trim().length < 10) {
       setError('La descrizione della segnalazione deve contenere almeno 10 caratteri.');
       return;
     }
 
+    // 3. Validazione cardinalità minima allegati
     if (uploads.length === 0) {
       setError('È obbligatorio allegare almeno una fotografia o un video a documentazione del problema.');
       return;
@@ -130,6 +160,7 @@ export default function NuovaSegnalazioneForm() {
       fd.set('descrizione', descrizione.trim());
       fd.set('latitudine', String(latNum));
       fd.set('longitudine', String(lonNum));
+      fd.set('originePosizione', selectedLocation.origine);
       fd.set('storageKeys', JSON.stringify(uploads.map(u => u.storageKey)));
 
       const res = await submitSegnalazioneAction(fd);
@@ -142,6 +173,8 @@ export default function NuovaSegnalazioneForm() {
 
       setSuccessId(res.segnalazioneId);
       setDescrizione('');
+      setSelectedLocation(null);
+      setExifProposta(null);
       setUploads([]);
     } catch {
       setError('Si è verificato un errore imprevisto durante l&rsquo;invio. Riprova.');
@@ -213,45 +246,12 @@ export default function NuovaSegnalazioneForm() {
           />
         </div>
 
-        {/* Localizzazione geografica */}
-        <div className="panel-subtle p-3 flex flex-col gap-3">
-          <span className="text-xs font-bold text-[var(--text-primary)]">
-            Posizione geografica (Coordinate)
-          </span>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="segnalazione-lat" className="form-label text-xs">
-                Latitudine <span className="text-[var(--error-text)]">*</span>
-              </label>
-              <input
-                id="segnalazione-lat"
-                type="number"
-                step="any"
-                required
-                value={lat}
-                onChange={e => setLat(e.target.value)}
-                className="form-input font-mono text-xs"
-              />
-            </div>
-            <div>
-              <label htmlFor="segnalazione-lon" className="form-label text-xs">
-                Longitudine <span className="text-[var(--error-text)]">*</span>
-              </label>
-              <input
-                id="segnalazione-lon"
-                type="number"
-                step="any"
-                required
-                value={lon}
-                onChange={e => setLon(e.target.value)}
-                className="form-input font-mono text-xs"
-              />
-            </div>
-          </div>
-          <p className="text-[0.6875rem] text-[var(--text-muted)]">
-            Se alleghi una foto con posizione GPS attiva, le coordinate verranno compilate automaticamente. In caso contrario, verifica che le coordinate corrispondano al punto esatto.
-          </p>
-        </div>
+        {/* Scelta del Luogo: Ricerca, Mappa con singolo segnaposto, GPS, EXIF e Alternativa Testuale */}
+        <LuogoPicker
+          exifProposta={exifProposta}
+          onLocationChange={handleLocationChange}
+          disabled={submitting || uploading}
+        />
 
         {/* Allegati */}
         <div>
@@ -307,7 +307,7 @@ export default function NuovaSegnalazioneForm() {
                       </span>
                       {item.exifCoords && (
                         <span className="text-[0.625rem] text-[var(--success-text)] font-mono hidden sm:inline">
-                          GPS rilevato
+                          GPS rilevato ({item.exifCoords.lat.toFixed(4)}, {item.exifCoords.lon.toFixed(4)})
                         </span>
                       )}
                     </div>
@@ -330,7 +330,7 @@ export default function NuovaSegnalazioneForm() {
           <button
             type="submit"
             id="submit-segnalazione"
-            disabled={submitting || uploading || uploads.length === 0}
+            disabled={submitting || uploading || uploads.length === 0 || !selectedLocation || !selectedLocation.confermata}
             className="btn btn-primary"
           >
             {submitting ? 'Invio in corso…' : 'Invia segnalazione'}

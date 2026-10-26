@@ -103,6 +103,42 @@ describe('Dominio Segnalazioni (Funzioni pure/mock)', () => {
     // Verifichiamo che i dati iniettati siano quelli provenienti dalla findMany (DB) e non altri
     expect(mediaCreated.byte_size).toBe(999);
     expect(mediaCreated.sha256).toBe('hashsicuro');
+    expect(createCallData.origine_posizione).toBe('MANUALE');
+  });
+
+  it('Creazione segnalazione con originePosizione EXIF_CONFERMATO viene registrata fedelmente', async () => {
+    prisma.utente.findUnique.mockResolvedValue({ stato_account: 'ATTIVO', verificato_il: new Date() });
+    prisma.uploadTemporaneo.updateMany.mockResolvedValue({ count: 1 });
+    prisma.uploadTemporaneo.findMany.mockResolvedValue([
+      { storage_key: 'A', tipo: 'FOTO', mime: 'image/jpeg', byte_size: 999, sha256: 'hashsicuro' }
+    ]);
+    prisma.segnalazione.create.mockResolvedValue({ id: 'seg-exif' });
+
+    await segnalazioni.createSegnalazioneAtomica(
+      'autore1',
+      'Segnalazione con posizione EXIF confermata',
+      45.4642,
+      9.19,
+      ['A'],
+      undefined,
+      undefined,
+      'EXIF_CONFERMATO'
+    );
+
+    expect(prisma.segnalazione.create).toHaveBeenCalled();
+    const createCallData = prisma.segnalazione.create.mock.calls[0][0].data;
+    expect(createCallData.origine_posizione).toBe('EXIF_CONFERMATO');
+    expect(createCallData.latitudine).toBe(45.4642);
+    expect(createCallData.longitudine).toBe(9.19);
+  });
+
+  it('Rifiuta coordinate estreme (lat < -90 o > 90, lon < -180 o > 180)', async () => {
+    await expect(segnalazioni.createSegnalazioneAtomica('autore1', 'Desc', -91, 10, ['A']))
+      .rejects.toThrow('Coordinate geografiche non valide');
+    await expect(segnalazioni.createSegnalazioneAtomica('autore1', 'Desc', 45, -181, ['A']))
+      .rejects.toThrow('Coordinate geografiche non valide');
+    await expect(segnalazioni.createSegnalazioneAtomica('autore1', 'Desc', 45, 181, ['A']))
+      .rejects.toThrow('Coordinate geografiche non valide');
   });
 
   describe('aggiungiSostegno (Vincoli, Audit e Rollback)', () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { executeTestEmailWorker, validateTestWorkerEnv } from '../../src/lib/email-test-worker-core';
 import type { IEmailTransport } from '../../src/lib/email-transport';
+import type { PrismaClient } from '@prisma/client';
 
 describe('Worker Outbox di Collaudo Isolato (Guardie di Sicurezza e Modalità Protetta)', () => {
   const dummyJob = {
@@ -20,7 +21,7 @@ describe('Worker Outbox di Collaudo Isolato (Guardie di Sicurezza e Modalità Pr
 
   function createMockPrisma(options: {
     liveDbName?: string;
-    job?: any;
+    job?: Record<string, unknown>;
     dbQueryFails?: boolean;
   }) {
     const updateSpy = vi.fn().mockResolvedValue({ id: options.job?.id || 'job-uuid-1234' });
@@ -118,7 +119,7 @@ describe('Worker Outbox di Collaudo Isolato (Guardie di Sicurezza e Modalità Pr
       const { prisma, spies } = createMockPrisma({ liveDbName: 'defaultdb' });
       const { transport, sendEmailSpy } = createMockTransport();
 
-      const result = await executeTestEmailWorker(prisma as any, transport, {
+      const result = await executeTestEmailWorker(prisma as unknown as PrismaClient, transport, {
         jobId: 'job-uuid-1234',
         send: false,
         allowedRecipient: 'operatore.autorizzato@scuola.edu.it',
@@ -151,7 +152,7 @@ describe('Worker Outbox di Collaudo Isolato (Guardie di Sicurezza e Modalità Pr
       const { prisma, spies } = createMockPrisma({ job: jobDiffRecipient });
       const { transport, sendEmailSpy } = createMockTransport();
 
-      const result = await executeTestEmailWorker(prisma as any, transport, {
+      const result = await executeTestEmailWorker(prisma as unknown as PrismaClient, transport, {
         jobId: 'job-uuid-1234',
         send: true,
         allowedRecipient: 'operatore.autorizzato@scuola.edu.it',
@@ -172,7 +173,7 @@ describe('Worker Outbox di Collaudo Isolato (Guardie di Sicurezza e Modalità Pr
       const { prisma, spies } = createMockPrisma({ liveDbName: 'la_nostra_citta_test' });
       const { transport, sendEmailSpy } = createMockTransport();
 
-      const result = await executeTestEmailWorker(prisma as any, transport, {
+      const result = await executeTestEmailWorker(prisma as unknown as PrismaClient, transport, {
         jobId: 'job-uuid-1234',
         send: false, // SENZA --send
         allowedRecipient: 'operatore.autorizzato@scuola.edu.it',
@@ -196,7 +197,7 @@ describe('Worker Outbox di Collaudo Isolato (Guardie di Sicurezza e Modalità Pr
       const { prisma, spies } = createMockPrisma({ liveDbName: 'la_nostra_citta_test' });
       const { transport, sendEmailSpy } = createMockTransport({ sendSuccess: true });
 
-      const result = await executeTestEmailWorker(prisma as any, transport, {
+      const result = await executeTestEmailWorker(prisma as unknown as PrismaClient, transport, {
         jobId: 'job-uuid-1234',
         send: true, // CON --send esplicito
         allowedRecipient: 'operatore.autorizzato@scuola.edu.it',

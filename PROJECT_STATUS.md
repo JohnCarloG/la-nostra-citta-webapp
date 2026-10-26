@@ -2,16 +2,21 @@
 
 **Progetto**: La Nostra Città, Il Nostro Futuro  
 **Target Autorizzato**: Next.js 16 (App Router) + Prisma ORM (5.22.0) + MySQL 8.4 su Aiven  
-**Stato Globale**: **Fase 4, Fase 5 e Blocco Scelta del Luogo (Nuova Segnalazione) Completati e Verificati con Test Automatici**.  
-- **134/134 Unit Test passati (100%)** (inclusi 18 nuovi test specifici per scelta luogo, ricerca, race-conditions, GPS, EXIF e submit)  
-- **45/45 Test di Integrazione DB superati** su Aiven live (inclusi i test formali di specifica **T05, T06, T07, T08, T09, T10, T11, T12, T13, T14**)  
-- **12/12 Step E2E Auth superati**  
-- **17 Route di produzione** compilate con successo in Next.js Turbopack (inclusa la rotta `/api/geo/search`)  
-- **TypeScript**: 0 errori (`tsc --noEmit`)  
-- **ESLint**: 0 errori e 0 warning nei nuovi moduli (file preesistenti isolati)  
-- **Storage Privato e Media**: protetto tramite endpoint dedicato `/api/media/[id]` con cache-control `no-cache, must-revalidate`. Collaudo manuale browser **RINVIATO al collaudo finale** per scelta dell'operatore (non bloccante).  
-- **Integrazione IA**: realizzata con **Adattatori Simulati Deterministici** (`DeterministicMockModerationAdapter`, `DeterministicMockClassificationAdapter`, `DeterministicMockMetadataAdapter`, `DeterministicMockCoherenceAdapter`). Nessuna chiamata esterna a pagamento o non autorizzata attivata.
-- **Scelta del Luogo**: implementata nel form Nuova Segnalazione con ricerca indirizzi Milano (debounce, gestione risposte tardive, policy OSM), mappa Leaflet con singolo segnaposto trascinabile/click-to-pick, GPS opzionale (gestione permessi negati non bloccante), suggerimento EXIF da confermare esplicitamente senza sovrascritture, alternativa testuale e riepilogo con conferma esplicita. Collaudo browser manuale rinviato.
+**Stato Globale**: **Progetto in corso (non concluso). Fase 4, Scelta del Luogo e Fase 6 completate; pipeline IA integrata con parti reali e simulate distinte; collaudo manuale operatore rinviato**.  
+- **171/171 Unit Test passati (100%)** su 18 file di test Vitest (inclusi 8 test mirati per RF08 classificazione, 16 test real adapters, 12 test dossier CSV, formula injection, RFC 4180, privacy e gestione indisponibilità DB).
+- **45/45 Test di Integrazione DB superati** su Aiven live (storico certificato su `la_nostra_citta_test`: T05-T14).
+- **12/12 Step E2E Auth superati**.
+- **18 Route applicative di produzione** compilate con successo in Next.js Turbopack (`/`, `/api/dossier/csv`, `/api/geo/search`, `/api/media/[id]`, `/api/uploads`, `/classifica`, `/comitato`, `/dashboard`, `/dossier`, `/login`, `/mappa`, `/register`, `/resend-verification`, `/reset-password`, `/reset-password/confirm`, `/segnalazioni`, `/segnalazioni/[id]`, `/verify`) oltre a `/_not-found`.
+- **TypeScript**: 0 errori (`tsc --noEmit`).
+- **ESLint**: 0 errori e 0 warning nei nuovi moduli.
+- **Storage Privato e Media**: protetto tramite endpoint dedicato `/api/media/[id]` con cache-control `no-cache, must-revalidate`. Collaudo manuale browser e resa cartacea fisica **RINVIATI al collaudo finale** per scelta dell'operatore (non bloccanti).
+- **Stato dei Moduli IA (Distinzione Rigida: Implementazione, Simulazione, Verifica Reale)**:
+  - **RF09 (EXIF GPS)**: Parser locale reale (`NativeExifMetadataAdapter`, `isSimulated = false`), analizza segmenti JPEG APP1/TIFF direttamente dal file system privato locale; 100% offline, zero costi e zero fughe dati. **Implementato e verificato**.
+  - **RF07 (Moderazione NLP)**: Pipeline presente; integrazione implementata secondo il codice (`ProviderModerationAdapter`, `isSimulated = false`) con prompt isolation anti-injection, timeout AbortSignal e validazione schema rigida; fail-closed sicuro a `IN_REVISIONE` con errore `MissingProviderCredentialError` in assenza di credenziali. **Chiamata reale non ancora collaudata con credenziali live**.
+  - **RF08 (Classificazione Categorie)**: Pipeline presente; tassonomia chiusa ricavata dalle categorie ammesse, validazione identificativi restituiti e suggerimenti isolati in `SuggerimentoCategoria` rigidamente distinti da `SegnalazioneCategoria`. Classificatore attualmente simulato per la CI (`DeterministicMockClassificationAdapter`, `isSimulated = true`). Adattatore reale `ProviderClassificationAdapter` implementato (`isSimulated = false`, nessun fallback silenzioso al mock). **Scelta modello/provider locale vs esterno aperta** (cfr. `docs/progetto/CONFRONTO_CLASSIFICAZIONE_IA.md`).
+  - **RF10 (Coerenza Visivo-Testuale)**: Pipeline presente; gestione video non supportato completata a livello di specifica con instradamento esplicito a `IN_REVISIONE`. Verifica visivo-testuale attualmente simulata (`DeterministicMockCoherenceAdapter`, `isSimulated = true`). **Blocco di sviluppo successivo**.
+- **Scelta del Luogo e Geocodifica**: conforme alla Nominatim Usage Policy di OpenStreetMap (nessun autocomplete, 1 req/s in-memory queue, cache 24h, ODbL). Limite: rate limiter in memoria su singolo processo.
+- **Stato Reale dei Conteggi**: documentato esclusivamente per riscontro empirico dei comandi eseguiti (171 test unitari su 18 file, 18 route Next.js censite dal build). Non si formulano ipotesi arbitrarie su discrepanze storiche.
 
 ---
 
@@ -63,12 +68,12 @@
   - Endpoint dedicato `/api/media/[id]`.
   - Cache revalidation rigorosa: `Cache-Control: public, no-cache, must-revalidate` (se pubblica) e `private, no-cache, no-store, must-revalidate` (se privata), impedendo la persistenza di media ritirati in cache intermedie o pubbliche senza rivalutazione dei permessi sul server.
 
-### Fase 5 - Pipeline IA, Worker Asincrono, Policy Conservativa e Protezione Concorrenza (COMPLETATA)
-- **Architettura a 4 Moduli (05 riga 22-26)**:
-  - `ModerationAdapter` (NLP): verdict `ALLOW`/`REVIEW`/`BLOCK`, reasons, score, model/policy version.
-  - `ClassificationAdapter` (Multi-label): suggerimenti categorie con confidenza e validazione schema catalogo ammesso (scarto duplicati e codici inesistenti, T08). Categorie assenti non bloccano l'approvazione (T07).
-  - `MetadataAdapter` (EXIF): estrazione coordinate e stato `SUCCESS`/`NO_EXIF`/`UNSUPPORTED` (T04/T09).
-  - `CoherenceAdapter` (Visivo-Testuale): verdict `CONSISTENT`/`UNCERTAIN`/`INCONSISTENT`/`UNSUPPORTED`. Video non supportato inviato a `IN_REVISIONE` con dichiarazione esplicita (T09).
+### Fase 5 - Pipeline IA, Worker Asincrono, Policy Conservativa e Protezione Concorrenza (IN CORSO — RF08/RF10 APERTI)
+- **Architettura a 4 Moduli (05 riga 22-26) con distinzione Implementazione / Simulazione / Verifica Reale**:
+  - `ModerationAdapter` (NLP — RF07): verdict `ALLOW`/`REVIEW`/`BLOCK`, reasons, score, model/policy version. Integrazione implementata secondo il codice (`ProviderModerationAdapter`, `isSimulated = false`) con prompt isolation anti-injection, timeout AbortSignal, validazione schema e fail-closed sicuro (`IN_REVISIONE`) se privo di credenziali `AI_MODERATION_API_KEY`. Conservato mock deterministico per test in CI (`DeterministicMockModerationAdapter`, `isSimulated = true`). **Chiamata reale non collaudata con credenziali live**.
+  - `ClassificationAdapter` (Multi-label — RF08): pipeline presente; tassonomia chiusa da catalogo ammesso, validazione schema e scarto duplicati/codici sconosciuti (`validateClassificationOutput`), suggerimenti isolati in `SuggerimentoCategoria` e distinti dalle categorie confermate comitato (`SegnalazioneCategoria`). Classificatore attualmente simulato nei test automatici (`DeterministicMockClassificationAdapter`, `isSimulated = true`). Adattatore reale implementato (`ProviderClassificationAdapter`, `isSimulated = false`) con blocco se privo di credenziali (nessun fallback silenzioso al mock). **Scelta del modello reale aperta (locale vs esterno)**.
+  - `MetadataAdapter` (EXIF — RF09): estrazione coordinate e stato `SUCCESS`/`NO_EXIF`/`CORRUPTED`/`UNSUPPORTED` (T04/T09). Implementato l'adattatore reale binario (`NativeExifMetadataAdapter`, `isSimulated = false`) che legge i segmenti JPEG APP1/TIFF direttamente dal file system locale privato senza costi né chiamate a terzi. **Implementato e verificato**.
+  - `CoherenceAdapter` (Visivo-Testuale — RF10): verdict `CONSISTENT`/`UNCERTAIN`/`INCONSISTENT`/`UNSUPPORTED`. Video non supportato inviato a `IN_REVISIONE` con dichiarazione esplicita (T09). Verifica visivo-testuale attualmente simulata (`DeterministicMockCoherenceAdapter`, `isSimulated = true`). **Blocco di sviluppo successivo**.
 - **Elaborazione Fuori Transazione DB**:
   - Chiamate ad adattatori e calcolo hash sha256 (`calculateInputHash`) eseguiti interamente **fuori da qualsiasi transazione database aperta**.
 - **Scrittura Atomica e Idempotente (`eseguiAnalisiSegnalazione`)**:
@@ -83,12 +88,17 @@
   - Retry limitati con backoff esponenziale. Raggiunto il limite `MAX_WORKER_RETRIES` (3), applicazione della policy conservativa a `IN_REVISIONE` e marcatura del job come gestito.
 
 ### Fase 5B - Nuova Segnalazione: Scelta del Luogo, Ricerca e Accessibilità (COMPLETATA)
-- **Ricerca Geografica Protetta con Contesto Milano (`/api/geo/search`)**:
+- **Ricerca Geografica Conforme alle Policy OpenStreetMap Nominatim (`/api/geo/search`)**:
   - Endpoint server-side protetto: nessuna chiave API o header interno esposto al browser.
-  - Pieno rispetto della Nominatim Usage Policy di OpenStreetMap: header `User-Agent` descrittivo obbligatorio, timeout a 5 secondi (`AbortSignal`), gestione rate-limit HTTP 429 e attribuzione OpenStreetMap ODbL inclusa nel payload.
+  - Pieno rispetto della Nominatim Usage Policy di OpenStreetMap:
+    - **Nessun autocomplete o ricerca durante la digitazione**: ricerca attivata unicamente su Invio o clic su "Cerca" (debounce e proxy non sanano l'autocomplete sui server pubblici OSMF).
+    - **Limite aggregato di 1 richiesta al secondo per intera applicazione** (non per singolo utente) gestito tramite coda serializzata `scheduleNominatimRequest`.
+    - **Cache in memoria di 24 ore** (`X-Cache: HIT/MISS`) per azzerare richieste duplicate su indirizzi già cercati.
+    - **Identificazione chiara**: header HTTP `User-Agent` descrittivo civico (`LaNostraCitta-Milano/1.0`).
+    - **Attribuzione visibile ODbL 1.0**: "Dati geografici © OpenStreetMap contributors, ODbL 1.0".
   - Bounding box configurata per l'area di Milano (`viewbox=9.04,45.54,9.28,45.38`) e lingua italiana.
 - **Interfaccia Luogo nel Form Nuova Segnalazione (`src/components/segnalazioni/luogo-picker.tsx`)**:
-  - Ricerca con debounce (400ms), annuncio di stato via live region ARIA (`aria-live="polite"`), navigazione accessibile da tastiera con focus visibile e dropdown dei risultati.
+  - Input di ricerca con pulsante "Cerca" esplicito, navigazione accessibile da tastiera e dropdown dei risultati.
   - Mappa interattiva Leaflet client-only (`MappaLuogoPicker`) con **un solo segnaposto** trascinabile (`draggable: true`), click-to-pick su qualsiasi punto della mappa e icona SVG vettoriale custom (nessun asset bitmap esterno che possa andare in 404).
   - Regola di integrità: il centro iniziale della mappa (Milano Duomo) **NON** è una posizione scelta; la posizione iniziale è `null` e richiede selezione esplicita.
   - Protezione concorrenza e risposte tardive: tracciamento sequenziale `requestId`; risposte di ricerche precedenti o tardive non sovrascrivono mai una posizione già corretta manualmente dall'utente.
@@ -101,32 +111,55 @@
   - Invio tramite il servizio esistente (`submitSegnalazioneAction` e `createSegnalazioneAtomica`) con validazione server-side delle coordinate (-90..90, -180..180) e memorizzazione dell'origine (`MANUALE` o `EXIF_CONFERMATO`).
   - Nessuna confusione tra quartiere di residenza e luogo della segnalazione; nessuna migrazione DB necessaria.
 
+### Fase 6 - RF13/T18: Dossier Esportabile e Versione Stampabile (COMPLETATA)
+- **Servizio di Estrazione Condiviso (`src/lib/domain/dossier.ts`)**:
+  - Funzione `getDossierSegnalazioni`: riutilizza rigorosamente le regole di dominio della classifica pubblica.
+  - Filtri di visibilità (VI06): seleziona esclusivamente segnalazioni con `stato_moderazione = 'APPROVATA'` e `stato_avanzamento <> 'RITIRATA'`.
+  - Sostegni validi: conteggio unicamente dei sostenitori con account `ATTIVO`, verificati (`verificato_il IS NOT NULL`), escludendo tassativamente l'autore della segnalazione (VI03).
+  - Ordinamento e spareggio deterministico: identico alla classifica pubblica (`sostegni_validi DESC, creata_il ASC, s.id ASC`, oppure ordinamento cronologico).
+  - Categorie confermate: arricchite dal catalogo confermato senza duplicare voti.
+- **Download CSV Conforme e Protetto da Formula Injection (`src/app/api/dossier/csv/route.ts`)**:
+  - Esportazione conforme a RFC 4180 con quoting e gestione corretta di newline e caratteri speciali.
+  - Inserimento del Byte Order Mark UTF-8 (`\uFEFF`) per garantire corretta decodifica di caratteri accentati ed emoji in Microsoft Excel su Windows.
+  - **Difesa da Formula Injection (CSV/DDE Injection)**: neutralizzazione sistematica (`sanitizeCsvFormula`) delle celle che iniziano con caratteri pericolosi (`=`, `+`, `-`, `@`, `\t`, `\r`), inclusi i casi preceduti da spazi bianchi o caratteri di controllo non stampabili, tramite prefisso con apice singolo (`'`).
+  - Separazione netta tra sanitizzazione formule e quoting CSV: la neutralizzazione precede l'escaping RFC 4180.
+  - **Riservatezza Dati (T18)**: esportazione strettamente limitata a campi pubblici (Posizione, ID, Descrizione, Stato Avanzamento, Categorie, Coordinate, Sostegni Validi, Data Creazione UTC). Nessun dato sensibile o interno esportato (zero email, codici fiscali, password hash, token di sessione/verifica o percorsi dello storage privato).
+  - Query parameters condivisi con l'interfaccia web (`categoria`, `stato`, `ordinamento`).
+- **Pagina Dossier Accessibile e Stampabile (`src/app/dossier/page.tsx`)**:
+  - Accessibile a tutti i cittadini, con riepilogo metadati (timestamp di estrazione in ora locale di Roma, filtri applicati, conteggio totale segnalazioni e totale sostegni).
+  - Tabella accessibile e leggibile su più pagine: regole `@media print` in `src/app/globals.css` configurate con `thead { display: table-header-group; }` (ripetizione intestazione su ogni pagina cartacea) e `tr { break-inside: avoid; }` (nessun taglio di riga).
+  - Nelle viste di stampa (`@media print`): controlli interattivi (pulsante stampa, link download CSV, barra filtri, navigazione di sistema e footer) rigorosamente nascosti.
+  - Collegamenti bidirezionali inseriti da `/classifica`, `/comitato` e `/segnalazioni`.
+- **Gestione Guasti Database e Fallback Realistici**:
+  - Se il database non risponde o fallisce:
+    - L'endpoint `/api/dossier/csv` restituisce HTTP 503 Service Unavailable ed errore JSON sanitizzato (mai un CSV vuoto che simuli un'esportazione riuscita).
+    - La pagina `/dossier` mostra un banner accessibile di indisponibilità con pulsante "Riprova" (nessun conteggio a zero inventato).
+    - Corretti i fallback anche nella pagina `/classifica`, distinguendo un database non disponibile da un'interrogazione andata a buon fine senza record.
+- **Nota di Collaudo**: la resa cartacea e l'anteprima di stampa fisica nel browser restano **rinviate al collaudo finale** insieme al collaudo manuale d'insieme (non dichiarate verificate senza osservazione diretta).
+
 ---
 
 ## Stato Verifiche e Collaudo
 
 | Suite di Verifica | Obiettivo / Test Coperti | Esito Reale |
 | :--- | :--- | :--- |
-| **Unit Test (Vitest)** | 116 test preesistenti + 18 nuovi test mirati (scelta luogo, ricerca, race-conditions, GPS, EXIF, submit, route handler) | **134/134 SUPERATI (100%)** |
+| **Unit Test (Vitest)** | 17 file di test: 19 auth, 10 codice-fiscale, 16 segnalazioni, 10 test-db-guard, 5 rate-limiter, 5 email-transport, 11 mime-validator, 3 storage-provider, 17 ia-pipeline, 11 ia-real-adapters, 14 nuova-segnalazione-luogo, 5 submit-segnalazione-luogo, 4 map-view-layout, 4 nav-links, 4 media-placeholder, 8 email-worker-test, 12 dossier (RF13, T18) | **158/158 SUPERATI (100%)** |
 | **Integrazione DB Aiven** | MySQL InnoDB su `la_nostra_citta_test`: 6 auth-db, 7 segnalazioni-db, 8 uploads-db, 11 fase4-community, 13 fase5-ia (**T05, T06, T07, T08, T09, T10, T11, T12, T13, T14**) | **45/45 SUPERATI (100%)** |
 | **Collaudo SMTP Reale (Gmail)** | Verifica connessione (`smtp.gmail.com:465`) e invio diagnostico controllato a casella reale | **SUPERATO CON RICEZIONE CONFERMATA** (MessageId `<ad170106-c920-5099-bdad-a72066da2cd2@gmail.com>`, recapito confermato da operatore) |
 | **TLS Prisma strict su macOS** | Connessione database MySQL con verifica rigorosa certificato CA e hostname | **BLOCCATO** (Bloccato su macOS da Apple Security Framework con errSecInvalidExtendedKeyUsage `-67609` a causa dell'assenza di `serverAuth` nel certificato del server Aiven. Convalidato con client TLS OpenSSL standard) |
 | **Verifica Account Reale via App** | Flusso applicativo completo `/register` o `/resend-verification` con email reale e token | **ANCORA DA COLLAUDARE** (Worker isolato con modalità dry-run e consenso `--send` predisposto per `la_nostra_citta_test`, in attesa di sblocco TLS strict o runtime Linux) |
 | **E2E Auth Script** | Ciclo end-to-end su Aiven: registrazione, verifica, login, cambio password e revoca sessioni | **12/12 SUPERATI (100%)** |
-
-
 | **TypeScript Typecheck** | `tsc --noEmit` su intero progetto | **0 ERRORI** |
-| **ESLint** | Regole Next.js e TypeScript | **0 errori e 0 warning nei nuovi moduli (nessun errore nei nuovi file)** |
-| **Build Produzione** | `next build` Turbopack | **17 ROUTE PRONTE (inclusa la nuova rotta /api/geo/search)** |
+| **ESLint** | Regole Next.js e TypeScript | **0 errori e 0 warning nei nuovi moduli** |
+| **Build Produzione** | `next build` Turbopack | **18 ROUTE APPLICATIVE PRONTE** (`/`, `/api/dossier/csv`, `/api/geo/search`, `/api/media/[id]`, `/api/uploads`, `/classifica`, `/comitato`, `/dashboard`, `/dossier`, `/login`, `/mappa`, `/register`, `/resend-verification`, `/reset-password`, `/reset-password/confirm`, `/segnalazioni`, `/segnalazioni/[id]`, `/verify`) oltre a `/_not-found` |
 | **Popolamento Dimostrativo** | `scripts/seed-demo-data.ts` su `defaultdb` | **11 segnalazioni, 12 quartieri Milano, 8 categorie, 10 profili sintetici, 58 sostegni relazionali** |
 
 ---
 
 ## Limiti Aperti e Funzionalità Non Implementate (Dichiarati Esplicitamente)
 
-1. **Trasporto Email SMTP Operatore**: Collaudo del trasporto SMTP reale (`SmtpEmailTransport`) su Gmail completato con successo: connessione TLS verificata, messaggio diagnostico accettato dal server e recapito in inbox confermato dall'operatore. Il worker Outbox è stato integrato con la modalità mirata (`--job-id <id>`) per l'elaborazione selettiva anti-arretrati. Verifica del flusso completo di attivazione account via app in attesa di connettività DB Aiven.
-
-2. **Collaudo Manuale Browser**: implementato a livello di dominio, action, API, UI e test automatici; il collaudo manuale browser resta **rinviato al collaudo finale** per scelta dell'operatore (non bloccante).
-3. **Integrazione IA Reale con Provider a Pagamento**: l'architettura dei 4 moduli e i contratti sono implementati e collaudati tramite **adattatori simulati deterministici** per garantire riproducibilità in CI e assenza di costi imprevisti. L'attivazione di chiamate a modelli commerciali/a pagamento richiede esplicita configurazione autorizzata.
+1. **Collaudo Manuale Browser e Resa Cartacea**: implementati a livello di dominio, action, API, UI e test automatici; il collaudo manuale browser e la prova visiva della resa cartacea di stampa restano **rinviati al collaudo finale** per scelta dell'operatore (non bloccanti).
+2. **Verifica Account Reale via App**: Worker outbox email integrato con modalità selettiva (`--job-id <id>`) e dry-run/send. Verifica del flusso completo di attivazione account via app in attesa di connettività DB Aiven o sblocco TLS strict su macOS.
+3. **Integrazione IA Reale con Provider a Pagamento**: l'architettura dei 4 moduli e i contratti sono implementati e coperti da test con mock deterministici. L'adapter reale di moderazione gestisce timeout e fail-closed; l'attivazione effettiva richiede la fornitura di chiavi API e autorizzazione esplicita a servizi terzi a pagamento.
 4. **Predisposizione Storage S3**: solo architetturale via interfaccia `StorageProvider`. Nessun adapter S3 sviluppato.
 5. **Rimozione Media**: la cancellazione dei singoli media da segnalazioni pubblicate è non implementata nel dominio per tutelare l'integrità probatoria.

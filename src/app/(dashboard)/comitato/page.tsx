@@ -78,7 +78,18 @@ export default async function ComitatoPage({ searchParams }: PageProps) {
             Operatore: <strong>{user.nome} {user.cognome}</strong> &bull; Ogni decisione viene registrata con firma e motivazione nel registro di audit.
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <Link
+            href="/dossier"
+            className="btn btn-secondary btn-xs flex items-center gap-1 font-semibold"
+            id="comitato-link-dossier"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            <span>Dossier Candidati (RF13)</span>
+          </Link>
           <span className="badge badge-mod-revisione font-bold">
             {coda.length} in coda di verifica
           </span>

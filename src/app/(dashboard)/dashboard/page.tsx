@@ -2,6 +2,7 @@ import { getCurrentUser } from '@/actions/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { prisma } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import NuovaSegnalazioneForm from './nuova-segnalazione-form';
 import CompletaProfiloBanner from '@/components/completa-profilo-banner';
 
@@ -39,8 +40,19 @@ export default async function DashboardPage() {
     orderBy: { nome: 'asc' },
   });
 
+  type SegnalazioneConCategorie = Prisma.SegnalazioneGetPayload<{
+    include: {
+      categorie: {
+        include: { categoria: true }
+      };
+      _count: {
+        select: { sostegni: true }
+      };
+    }
+  }>;
+
   // Recupero delle segnalazioni inserite dall'utente loggato
-  let mieSegnalazioni: any[] = [];
+  let mieSegnalazioni: SegnalazioneConCategorie[] = [];
   try {
     mieSegnalazioni = await prisma.segnalazione.findMany({
       where: { autore_id: user.id },
@@ -128,7 +140,7 @@ export default async function DashboardPage() {
                     <span className="text-[0.6875rem] font-mono text-[var(--text-muted)]">
                       Rev. {seg.revisione}
                     </span>
-                    {seg.categorie.map((c: any) => (
+                    {seg.categorie.map((c) => (
                       <span key={c.categoria.id} className="badge badge-categoria">
                         {c.categoria.nome}
                       </span>

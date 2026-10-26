@@ -9,8 +9,8 @@ export default async function MappaPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const categoriaId = params.categoria || undefined;
 
-  let categorie: any[] = [];
-  let segnalazioni: any[] = [];
+  let categorie: Awaited<ReturnType<typeof getCategorieAttive>> = [];
+  let segnalazioni: Awaited<ReturnType<typeof getSegnalazioniMappa>> = [];
 
   try {
     const [cats, segs] = await Promise.all([

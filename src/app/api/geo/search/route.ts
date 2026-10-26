@@ -27,18 +27,77 @@ interface NominatimItem {
   address?: NominatimAddress;
 }
 
+export interface GeocodingResultItem {
+  id: string;
+  titolo: string;
+  sottotitolo: string;
+  indirizzoCompleto: string;
+  lat: number;
+  lon: number;
+}
+
+/**
+ * Cache in memoria per i risultati di geocodifica (TTL 24 ore)
+ * Conforme alla Nominatim Usage Policy ("You must cache results").
+ */
+interface CacheEntry {
+  results: GeocodingResultItem[];
+  timestamp: number;
+}
+
+const geocodingCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 ore
+
+/**
+ * Coda serializzata aggregata per il rate-limiting applicativo.
+ * Conforme alla Nominatim Usage Policy di OpenStreetMap:
+ * "Absolute maximum of 1 request per second"
+ * Questo limite è per l'intera applicazione verso i server pubblici OSMF, NON per singolo utente.
+ */
+let lastNominatimTimestamp = 0;
+const MIN_NOMINATIM_INTERVAL_MS = 1100; // 1.1s garantisce rispetto rigoroso del limite di 1 req/s
+let nominatimQueue: Promise<void> = Promise.resolve();
+
+export function scheduleNominatimRequest<T>(fn: () => Promise<T>): Promise<T> {
+  const execute = async () => {
+    const now = Date.now();
+    const elapsed = now - lastNominatimTimestamp;
+    if (elapsed < MIN_NOMINATIM_INTERVAL_MS) {
+      await new Promise(resolve => setTimeout(resolve, MIN_NOMINATIM_INTERVAL_MS - elapsed));
+    }
+    lastNominatimTimestamp = Date.now();
+    return fn();
+  };
+
+  const next = nominatimQueue.then(execute, execute);
+  nominatimQueue = next.then(() => {}, () => {});
+  return next;
+}
+
+/** Helper per i test unitari */
+export function _clearGeocodingCacheForTests(): void {
+  geocodingCache.clear();
+  lastNominatimTimestamp = 0;
+}
+
+export function _getGeocodingCacheSizeForTests(): number {
+  return geocodingCache.size;
+}
+
 /**
  * Route handler per la ricerca geografica con contesto Milano (GET /api/geo/search?q=...)
  *
- * Linee guida e vincoli:
- * 1. Rispetta la Nominatim Usage Policy di OpenStreetMap:
- *    - Header HTTP User-Agent valido che identifica l'applicazione civica
- *    - Limite a 5 risultati per non sovraccaricare il servizio pubblico
- *    - Attribuzione OpenStreetMap obbligatoria inclusa nella risposta
+ * Linee guida e vincoli di specifica:
+ * 1. Rispetto tassativo della Nominatim Usage Policy di OpenStreetMap:
+ *    - NESSUN autocomplete o ricerca durante la digitazione (vietato sui server pubblici OSMF)
+ *    - Limite aggregato di applicazione: massimo 1 richiesta al secondo (gestito via scheduleNominatimRequest)
+ *    - Header HTTP User-Agent identificativo dell'applicazione civica
+ *    - Caching locale delle risposte per evitare richieste duplicate
+ *    - Attribuzione visibile "Dati geografici © OpenStreetMap contributors, ODbL 1.0"
  * 2. Parametri orientati al contesto territoriale di Milano:
  *    - viewbox centrata sull'area metropolitana di Milano (9.04, 45.54, 9.28, 45.38)
  *    - countrycodes=it, accept-language=it
- * 3. Gestione timeout (5s), rate limit (429) e provider indisponibile senza esporre credenziali
+ * 3. Gestione timeout (5s), rate limit (429) e provider indisponibile
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -51,7 +110,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Verifica configurazione provider esterno opzionale
+  // Verifica configurazione provider esterno alternativo opzionale
   const provider = process.env.GEOCODING_PROVIDER || 'nominatim';
   const apiKey = process.env.GEOCODING_API_KEY;
 
@@ -67,6 +126,25 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Normalizzazione query per cache key (case-insensitive, spazi multipli collassati)
+  const cacheKey = q.toLowerCase().replace(/\s+/g, ' ');
+  const cached = geocodingCache.get(cacheKey);
+  const now = Date.now();
+
+  if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+    return NextResponse.json(
+      {
+        results: cached.results,
+        attribution: 'Dati geografici © OpenStreetMap contributors, ODbL 1.0',
+      },
+      {
+        headers: {
+          'X-Cache': 'HIT',
+        },
+      }
+    );
+  }
+
   // Provider predefinito: OpenStreetMap Nominatim
   const endpoint = new URL('https://nominatim.openstreetmap.org/search');
   endpoint.searchParams.set('q', q);
@@ -79,19 +157,25 @@ export async function GET(request: NextRequest) {
   endpoint.searchParams.set('bounded', '0'); // Favorisce Milano senza scartare risultati limitrofi validi
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    // Esecuzione regolata dal collo di bottiglia applicativo di 1 richiesta al secondo
+    const res = await scheduleNominatimRequest(async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    const res = await fetch(endpoint.toString(), {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'LaNostraCitta-Milano/1.0 (info@lanostracitta.it; Piattaforma civica partecipata)',
-        'Accept-Language': 'it, en;q=0.8',
-      },
-      signal: controller.signal,
+      try {
+        const response = await fetch(endpoint.toString(), {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'LaNostraCitta-Milano/1.0 (info@lanostracitta.it; Piattaforma civica partecipata)',
+            'Accept-Language': 'it, en;q=0.8',
+          },
+          signal: controller.signal,
+        });
+        return response;
+      } finally {
+        clearTimeout(timeoutId);
+      }
     });
-
-    clearTimeout(timeoutId);
 
     if (res.status === 429) {
       return NextResponse.json(
@@ -124,7 +208,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const results = items
+    const results: GeocodingResultItem[] = items
       .map((item, idx) => {
         const lat = parseFloat(item.lat);
         const lon = parseFloat(item.lon);
@@ -150,12 +234,25 @@ export async function GET(request: NextRequest) {
           lon,
         };
       })
-      .filter((r): r is NonNullable<typeof r> => r !== null);
+      .filter((r): r is GeocodingResultItem => r !== null);
 
-    return NextResponse.json({
+    // Memorizza in cache locale
+    geocodingCache.set(cacheKey, {
       results,
-      attribution: 'Dati geografici © OpenStreetMap contributors, ODbL 1.0',
+      timestamp: Date.now(),
     });
+
+    return NextResponse.json(
+      {
+        results,
+        attribution: 'Dati geografici © OpenStreetMap contributors, ODbL 1.0',
+      },
+      {
+        headers: {
+          'X-Cache': 'MISS',
+        },
+      }
+    );
   } catch (err: unknown) {
     const isAbort = (err as Error)?.name === 'AbortError';
     return NextResponse.json(

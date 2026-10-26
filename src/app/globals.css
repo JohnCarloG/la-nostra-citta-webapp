@@ -591,3 +591,55 @@ h1, h2, h3, h4, h5, h6, .font-display {
     scroll-behavior: auto !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STILI DI STAMPA PER DOSSIER ELETTORALE E REPORT CARTACEI (RF13, T18)
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media print {
+  /* Nascondi navigazione, footer e controlli interattivi */
+  header, footer, nav, .skip-link, .print-hidden, [data-print-hidden="true"] {
+    display: none !important;
+  }
+
+  body {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+    font-size: 10pt !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .page-container {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Gestione impaginazione tabella su più pagine */
+  .dossier-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  .dossier-table thead {
+    display: table-header-group !important; /* Ripete l'intestazione su ogni pagina */
+  }
+
+  .dossier-table tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .dossier-table th,
+  .dossier-table td {
+    border: 1px solid #CCCCCC !important;
+    padding: 4pt 6pt !important;
+    color: #000000 !important;
+  }
+
+  .dossier-table th {
+    background: #F0F0F0 !important;
+    font-weight: bold !important;
+  }
+}
+

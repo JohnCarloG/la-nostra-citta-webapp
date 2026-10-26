@@ -1,0 +1,72 @@
+erDiagram
+    QUARTIERE ||--o{ UTENTE : "RISIEDE_IN (0,1)"
+    UTENTE ||--o{ SEGNALAZIONE : "CREA (0,N)"
+    UTENTE }o--o{ SEGNALAZIONE : "SOSTIENE (0,N) [data_sostegno]"
+    SEGNALAZIONE ||--|{ MEDIA : "HA (1,N)"
+    SEGNALAZIONE }o--o{ CATEGORIA : "CLASSIFICATA_IN (0,N)"
+    SEGNALAZIONE ||--|{ EVENTO_STATO : "HA_STORIA (1,N)"
+    UTENTE ||--o{ EVENTO_STATO : "ESEGUE (0,N)"
+
+    QUARTIERE {
+        string id PK
+        string nome UK
+    }
+
+    UTENTE {
+        string id PK
+        string nome
+        string cognome
+        string email_normalizzata UK
+        string password_hash
+        string codice_fiscale UK
+        string ruolo "CITTADINO | COMITATO"
+        string stato_account "ATTIVO | SOSPESO"
+        datetime verificato_il
+        datetime creato_il
+    }
+
+    SEGNALAZIONE {
+        string id PK
+        string descrizione
+        decimal latitudine
+        decimal longitudine
+        string origine_posizione "MANUALE | EXIF_CONFERMATO"
+        string stato_avanzamento "RICEVUTA | PRESA_IN_CARICO | INVIATA_AI_CANDIDATI | RITIRATA"
+        string stato_moderazione "PENDENTE | IN_REVISIONE | APPROVATA | RIFIUTATA"
+        int revisione
+        datetime creata_il
+        datetime aggiornata_il
+    }
+
+    MEDIA {
+        string id PK
+        string storage_key UK
+        string tipo "FOTO | VIDEO"
+        string mime
+        int byte_size
+        int durata_secondi
+        string sha256
+        string stato_file "READY | QUARANTENA | ERRORE"
+        decimal exif_lat
+        decimal exif_lon
+        string derivato_key UK
+        datetime creato_il
+    }
+
+    CATEGORIA {
+        string id PK
+        string codice UK
+        string nome
+        boolean attiva
+    }
+
+    EVENTO_STATO {
+        string id PK
+        string tipo_attore "UTENTE | SISTEMA"
+        string ambito "AVANZAMENTO | MODERAZIONE"
+        string da_stato
+        string a_stato
+        string motivazione
+        int revisione
+        datetime creato_il
+    }

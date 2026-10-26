@@ -424,7 +424,7 @@ function validateMp4Structure(buffer: Buffer): { valid: boolean; error?: string 
  * Esplora i segmenti APP1 (0xFF 0xE1) per identificare latitudine/longitudine se presenti.
  * Garantisce zero-crash su metadati malformati o troncati.
  */
-function extractJpegExifGps(buffer: Buffer): { lat: number; lon: number } | undefined {
+export function extractJpegExifGps(buffer: Buffer): { lat: number; lon: number } | undefined {
   try {
     let offset = 2;
     while (offset < buffer.length - 4) {

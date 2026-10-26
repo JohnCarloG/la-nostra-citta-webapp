@@ -8,22 +8,20 @@ Questo registro documenta gli esiti reali e riproducibili delle verifiche esegui
 
 | Verifica | Comando | Esito Reale | Dettagli / Note |
 | :--- | :--- | :--- | :--- |
-| **Prisma Validate** | `npx prisma validate` | **SUPERATO (0 errori)** | Schema sintatticamente e semanticamente conforme per datasource MySQL InnoDB. |
-| **Prisma Generate** | `npx prisma generate` | **SUPERATO (0 errori)** | Prisma Client v5.22.0 generato e allineato ai tipi di runtime. |
-| **Compilazione TypeScript** | `npx tsc --noEmit` | **SUPERATO (0 errori)** | Zero errori di tipo su Server Actions, pagine, script diagnostici, moduli IA e test. |
-| **Linting ESLint** | `npm run lint` | **SUPERATO (0 errori, 0 warning)** | Conforme alle regole ESLint Next.js e TypeScript. |
-| **Build Next.js** | `npm run build` | **SUPERATO (0 errori)** | Build di produzione Turbopack completata con successo: 16 route pronte (`/`, `/segnalazioni`, `/segnalazioni/[id]`, `/classifica`, `/mappa`, `/comitato`, `/dashboard`, `/login`, `/register`, `/verify`, `/reset-password`, `/reset-password/confirm`, `/resend-verification`, `/api/media/[id]`, `/api/uploads`, `/_not-found`). |
-| **Unit Testing (Vitest)** | `npm run test:unit` | **SUPERATO (114/114 test passati)** | **106 test preesistenti** (19 auth, 10 codice-fiscale, 14 segnalazioni, 10 guardie DB, 5 rate-limiter, 5 email-transport, 11 mime-validator, 3 storage provider, 17 ia-pipeline, 4 map-view, 4 nav-links, 4 media-placeholder) + **8 test mirati del nuovo worker di collaudo** (validazione parametri, rifiuto live DB errato, blocco destinatario non autorizzato, verifica modalità dry-run senza modifiche Outbox, invio controllato solo con `--send`). |
-| **Integrazione DB Aiven** | `npm run test:integration` | **SUPERATO SU AIVEN (45/45 test passati)** | Esecuzione sequenziale su `la_nostra_citta_test`: 6 test auth-db, 7 test segnalazioni-db, 8 test uploads-db, 11 test fase4-community (T05, T06, T11, T12, T13), 13 test fase5-ia (**T07, T08, T09, T10, T14**). |
-| **Collaudo Connessione SMTP** | `npm run smtp:check` | **SUPERATO** | Connessione a `smtp.gmail.com:465` (SSL/TLS nativo, SMTP_SECURE=true) con autenticazione riuscita (Risposta: `250 Server pronto`). |
-| **Invio e Ricezione Email Reale** | `npm run smtp:check -- <casella>` | **SUPERATO (RICEZIONE CONFERMATA)** | Singolo invio diagnostico verso casella reale concordata. Accettato da Gmail SMTP (MessageId `<ad170106-c920-5099-bdad-a72066da2cd2@gmail.com>`) e consegna effettiva in inbox confermata dall'operatore. |
-| **TLS Prisma strict su macOS** | `npm run verify:db` (con `sslaccept=strict`) | **BLOCCATO** | Connessione fallita su macOS per policy Apple Security Framework (`errSecInvalidExtendedKeyUsage`, codice `-67609`), dovuta all'assenza dell'estensione standard `serverAuth` nel certificato emesso dal cluster Aiven MySQL. Verifica CA e hostname convalidata con successo con client OpenSSL/Node.js nativo. |
-| **Verifica Account Reale via App** | Flusso `/register` o `/resend-verification` | **ANCORA DA COLLAUDARE** | Worker isolato e testato con modalità dry-run e consenso esplicito `--send` per `la_nostra_citta_test`. In attesa di sblocco TLS strict su macOS (o runtime Linux) per esecuzione end-to-end. |
-| **Script Diagnostico Read-Only** | `npm run verify:db` | **ISPEZIONE READ-ONLY ESEGUITA** | Database `defaultdb` e `la_nostra_citta_test` ispezionati in sola lettura: 17 tabelle presenti, migrazioni allineate (2 su defaultdb, 3 su test), account operatore verificato e intatto (`verificato_il` valorizzato). |
-
-
-| **Applicazione Migrazioni Protetta** | `npm run migrate:test` | **SUPERATO SU AIVEN (LIVE)** | `20261006000000_init_mysql` applicata e registrata come applied. Allineamento DDL completato senza reset né db push. Nessuna migrazione pendente rimasta. |
-| **Script Collaudo E2E Autenticazione** | `npm run test:e2e:auth` | **SUPERATO SU AIVEN (12/12 step)** | Ciclo completo end-to-end eseguito live: registrazione -> blocco login pre-verifica -> recupero token da email -> verifica email atomica -> login -> verifica sessione -> richiesta reset -> cambio password con revoca di tutte le sessioni -> rifiuto credenziali obsolete -> login nuova password -> logout esplicito e revoca. |
+| **Prisma Validate** | `npx prisma validate` | **SUPERATO IN SESSIONE (0 errori)** | Schema sintatticamente e semanticamente conforme per datasource MySQL InnoDB. |
+| **Prisma Generate** | `npx prisma generate` | **SUPERATO IN SESSIONE (0 errori)** | Prisma Client v5.22.0 generato e allineato ai tipi di runtime. |
+| **Compilazione TypeScript** | `npx tsc --noEmit` | **SUPERATO IN SESSIONE (0 errori)** | Zero errori di tipo su Server Actions, pagine, script diagnostici, moduli IA e test. |
+| **Linting ESLint** | `npm run lint` | **SUPERATO IN SESSIONE (0 errori, 0 warning)** | Conforme alle regole ESLint Next.js e TypeScript nei moduli sviluppati. |
+| **Build Next.js** | `npm run build` | **SUPERATO IN SESSIONE (0 errori)** | Build di produzione Turbopack completata con successo: 18 route applicative pronte (`/`, `/api/dossier/csv`, `/api/geo/search`, `/api/media/[id]`, `/api/uploads`, `/classifica`, `/comitato`, `/dashboard`, `/dossier`, `/login`, `/mappa`, `/register`, `/resend-verification`, `/reset-password`, `/reset-password/confirm`, `/segnalazioni`, `/segnalazioni/[id]`, `/verify`) oltre a `/_not-found`. |
+| **Unit Testing (Vitest)** | `npm run test:unit` | **SUPERATO IN SESSIONE (171/171 test passati)** | **171 test unitari passati su 18 file**: 19 auth, 10 codice-fiscale, 16 segnalazioni, 10 test-db-guard, 5 rate-limiter, 5 email-transport, 11 mime-validator, 3 storage provider, 17 ia-pipeline, 16 ia-real-adapters (parser EXIF reale, provider moderazione e provider classificazione con blocco se privo di credenziali), 8 ia-classification (RF08: catalogo chiuso, deduplicazione, timeout, indisponibilità, override umano), 14 nuova-segnalazione-luogo, 5 submit-segnalazione-luogo, 4 map-view, 4 nav-links, 4 media-placeholder, 8 email-worker-test, 12 dossier (RF13, T18: formula injection, escaping RFC 4180, privacy, ordinamento condiviso, gestione 503 su DB down). |
+| **Integrazione DB Aiven** | `npm run test:integration` | **RISCONTRO STORICO AIVEN (45/45 test passati)** | Esecuzione sequenziale certificata su `la_nostra_citta_test`: 6 test auth-db, 7 test segnalazioni-db, 8 test uploads-db, 11 test fase4-community (T05, T06, T11, T12, T13), 13 test fase5-ia (**T07, T08, T09, T10, T14**). *Non rieseguita in questa sessione per preservare la baseline ed evitare diagnosi TLS.* |
+| **Collaudo SMTP Reale (Gmail)** | `npm run smtp:check` | **RISCONTRO STORICO (SUPERATO)** | Connessione a `smtp.gmail.com:465` (SSL/TLS nativo, SMTP_SECURE=true) con autenticazione riuscita (Risposta: `250 Server pronto`). |
+| **Invio e Ricezione Email Reale** | `npm run smtp:check -- <casella>` | **RISCONTRO STORICO (RICEZIONE CONFERMATA)** | Singolo invio diagnostico verso casella reale concordata. Accettato da Gmail SMTP (MessageId `<ad170106-c920-5099-bdad-a72066da2cd2@gmail.com>`) e consegna effettiva in inbox confermata dall'operatore. |
+| **TLS Prisma strict per Sistema Operativo** | `npm run verify:db` (con `sslaccept=strict`) | **EVIDENZE SEPARATE PER OS** | **Windows**: verificato con successo in sessione con certificato CA Aiven e validazione strict.<br>**macOS**: vincolo Apple Security Framework (`errSecInvalidExtendedKeyUsage`, codice `-67609`) dovuto all'assenza dell'estensione standard `serverAuth` nel certificato emesso dal server database.<br>**Linux**: predisposto con stack OpenSSL; non eseguito in questa sessione e da verificare empiricamente con certificato live prima dell'esercizio. |
+| **Verifica Account Reale via App** | Flusso `/register` o `/resend-verification` | **COLLAUDO MANUALE RINVIATO** | Worker isolato e testato con modalità dry-run e consenso esplicito `--send` per `la_nostra_citta_test`. In attesa del collaudo finale dell'operatore (vedi checklist). |
+| **Script Diagnostico Read-Only** | `npm run verify:db` | **RISCONTRO STORICO (ISPEZIONE ESEGUITA)** | Database `defaultdb` e `la_nostra_citta_test` ispezionati in sola lettura: 17 tabelle presenti, migrazioni allineate (2 su defaultdb, 3 su test), account operatore verificato e intatto (`verificato_il` valorizzato). |
+| **Applicazione Migrazioni Protetta** | `npm run migrate:test` | **RISCONTRO STORICO (SUPERATO SU AIVEN)** | `20261006000000_init_mysql` applicata e registrata come applied. Allineamento DDL completato senza reset né db push. Nessuna migrazione pendente rimasta. |
+| **Script Collaudo E2E Autenticazione** | `npm run test:e2e:auth` | **RISCONTRO STORICO (12/12 step)** | Ciclo completo end-to-end eseguito live: registrazione -> blocco login pre-verifica -> recupero token da email -> verifica email atomica -> login -> verifica sessione -> richiesta reset -> cambio password con revoca di tutte le sessioni -> rifiuto credenziali obsolete -> login nuova password -> logout esplicito e revoca. |
 
 
 ---
@@ -80,21 +78,23 @@ Questo registro documenta gli esiti reali e riproducibili delle verifiche esegui
 | **Concorrenza Outbox Worker** | **Database (MySQL 8.4)** | `FOR UPDATE SKIP LOCKED` previene collisioni tra worker distribuiti. |
 | **Preservazione Decisione Umana** | **Applicativa Transazionale** | Verifica `stato_moderazione !== 'PENDENTE'` prima di qualsiasi aggiornamento automatico da pipeline IA. |
 | **Collaudo Manuale Browser** | **LIMITE APERTO (VOLUTO)** | Verificato al 100% da test automatici; collaudo manuale tramite interfaccia browser rinviato al collaudo finale per scelta operatore. |
-| **Integrazione IA Reale** | **SIMULATA (DETERMINISTICA)** | 4 moduli coperti da contratti e prove con adattatori deterministici. Nessun provider a pagamento o chiamata esterna non autorizzata attivata. |
+| **Integrazione IA Reale vs Simulata** | **STATO DISTINTO PER MODULO** | **RF09 (EXIF)**: Reale locale nativo non simulato (`NativeExifMetadataAdapter`, `isSimulated = false`).<br>**RF07 (Moderazione)**: Integrazione implementata secondo il codice (`ProviderModerationAdapter`), chiamata reale non ancora collaudata con credenziali live.<br>**RF08 (Classificazione)**: Pipeline presente; contratti e validazione tassonomia chiusa completati; classificatore attualmente simulato (`DeterministicMockClassificationAdapter`); adattatore reale `ProviderClassificationAdapter` implementato (`isSimulated = false`, nessun fallback silenzioso al mock); scelta modello aperta (locale vs esterno).<br>**RF10 (Coerenza)**: Pipeline presente; verifica attualmente simulata (`DeterministicMockCoherenceAdapter`); blocco successivo. |
 
 ---
 
 ## 4. Dettaglio Verifiche Fase 5 (Pipeline IA, Worker e Policy Conservativa)
 
-### Distinzione: Implementazione, Test Automatici e Prove Manuali
+### Distinzione Rigida: Implementazione, Simulazione e Collaudo Reale
+> [!IMPORTANT]
+> Una risposta ottenuta da un mock deterministico non costituisce collaudo del modello reale. I test automatici in CI verificano la correttezza dei contratti, delle transizioni di stato e della gestione degli errori; le chiamate a modelli reali dipendono dalla configurazione esplicita del committente.
 
-| Requisito / Ambito | Implementazione | Test Automatici (Vitest / DB Aiven) | Prove Manuali |
+| Requisito / Ambito | Implementazione | Test Automatici (Vitest / DB Aiven) | Stato Collaudo Reale |
 | :--- | :--- | :--- | :--- |
-| **T07 (RF07)**: Moderazione NLP & Policy Conservativa | `DeterministicMockModerationAdapter`, `eseguiAnalisiSegnalazione` in `src/lib/ia/pipeline.ts` | **100% Superato (4/4 test)** in `fase5-ia.test.ts`: ALLOW + coerenza valida porta a `APPROVATA`; testo senza categorie ammesse non blocca l'approvazione; testo con violazione porta a `RIFIUTATA`; timeout o provider offline porta conservativamente a `IN_REVISIONE`. | Verificato tracciamento EventoStato e AuditEvento a database. |
-| **T08 (RF08)**: Classificazione Multi-Label | `DeterministicMockClassificationAdapter`, `validateClassificationOutput` in `src/lib/ia/validators.ts` | **100% Superato (2/2 test)** in `fase5-ia.test.ts`: scarto automatico di categorie duplicate o fuori catalogo senza errori DB; suggerimenti memorizzati in `SuggerimentoCategoria` rigidamente separati dalle categorie confermate. | Ispezione tabelle `SuggerimentoCategoria` e `SegnalazioneCategoria`. |
-| **T09 (RF10)**: Media, Video e Coerenza Visiva | `DeterministicMockCoherenceAdapter`, `DeterministicMockMetadataAdapter` | **100% Superato (2/2 test)** in `fase5-ia.test.ts`: allegato video porta a `IN_REVISIONE` dichiarando esplicitamente limite formato; immagine incoerente porta a `IN_REVISIONE`; estrazione EXIF gestisce NO_EXIF senza errori. | Verifica motivazione esplicita nell'evento di stato. |
-| **T10 (VI08)**: Revisioni Superate & Override Umano | `modificaSegnalazione` in `segnalazioni.ts`, lock `FOR UPDATE` e check di revisione in `pipeline.ts` | **100% Superato (2/2 test)** in `fase5-ia.test.ts`: job relativo a revisione superata marcato `OBSOLETE` e non sovrascrive la revisione corrente; decisione umana già presa (`RIFIUTATA`) preservata intatta contro job tardivo (`SKIPPED_HUMAN_OVERRIDE`). | Verifica immutabilità dello stato deciso dal comitato. |
-| **T14 (Affidabilità)**: Worker Concorrente e Retry | `claimNextOutboxJob`, `processSingleOutboxJob` in `src/lib/ia/worker.ts` | **100% Superato (3/3 test)** in `fase5-ia.test.ts`: `FOR UPDATE SKIP LOCKED` assegna job distinti a worker simultanei senza stalli; riesecuzione idempotente non genera record duplicati; retry con backoff e fallback conservativo a `IN_REVISIONE` su max retries. | Simulazione crash del provider con transizione a IN_REVISIONE. |
+| **T07 (RF07)**: Moderazione NLP & Policy Conservativa | `ProviderModerationAdapter` (reale) e `DeterministicMockModerationAdapter` (CI) in `src/lib/ia/pipeline.ts` | **Superato con mock deterministico**: 17 test in `ia-pipeline.test.ts`, 16 test in `ia-real-adapters.test.ts`, 4 test in `fase5-ia.test.ts`. | **Integrazione implementata; chiamata reale non ancora collaudata**. Richiede credenziale `AI_MODERATION_API_KEY`. Fail-closed sicuro a `IN_REVISIONE`. |
+| **T08 (RF08)**: Classificazione Multi-Label Civica | `ProviderClassificationAdapter` (reale), `DeterministicMockClassificationAdapter` (CI), `validateClassificationOutput` in `validators.ts` | **Superato con mock deterministico**: 8 test in `ia-classification.test.ts` (categorie valide, inesistenti, risposta malformata, nessun suggerimento, indisponibilità provider, override umano). | **Pipeline presente; classificatore attualmente simulato**. Adattatore reale implementato (`isSimulated = false`, nessun fallback silenzioso). Scelta modello/provider aperta. |
+| **T09 (RF10)**: Media, Video e Coerenza Visiva | `NativeExifMetadataAdapter` (reale locale), `DeterministicMockCoherenceAdapter` (CI) | **Superato con mock deterministico**: video porta a `IN_REVISIONE` dichiarando limite formato; immagine incoerente porta a `IN_REVISIONE`; EXIF reale verifica parsing binario. | **EXIF verificato con parser reale nativo**. Verifica visivo-testuale attualmente simulata (blocco successivo). |
+| **T10 (VI08)**: Revisioni Superate & Override Umano | Lock `FOR UPDATE`, check revisione e override umano in `pipeline.ts` | **Superato al 100%**: job superato marcato `OBSOLETE`; decisione umana già presa preservata intatta contro job tardivo (`SKIPPED_HUMAN_OVERRIDE`). | **Garantito a livello di transazione atomica e dominio**. |
+| **T14 (Affidabilità)**: Worker Concorrente e Retry | `claimNextOutboxJob`, `processSingleOutboxJob` in `src/lib/ia/worker.ts` | **Superato al 100%**: `FOR UPDATE SKIP LOCKED` assegna job distinti; riesecuzione idempotente; fallback a `IN_REVISIONE` dopo max retry. | **Garantito a livello di transazione MySQL 8.4 e Outbox pattern**. |
 
 ---
 
@@ -117,12 +117,28 @@ Questo registro documenta gli esiti reali e riproducibili delle verifiche esegui
 
 ---
 
-## 6. Procedura di Collaudo Eseguita con Successo
+## 6. Dettaglio Verifiche - Fase 6 (RF13/T18: Dossier Esportabile e Versione Stampabile)
+
+### Distinzione: Implementazione, Test Automatici e Prove Manuali
+
+| Ambito di Verifica | Implementazione | Test Automatici (Vitest Unit) | Prove Manuali / Browser |
+| :--- | :--- | :--- | :--- |
+| **1. Neutralizzazione Formula Injection** | `sanitizeCsvFormula` in `src/lib/domain/dossier.ts` | **Superato (100%)**: `tests/unit/dossier.test.ts` (test 1, 2, 3, 4). Caratteri pericolosi `=`, `+`, `-`, `@`, `\t`, `\r` prefissati con `'`, inclusi casi con spazi bianchi e caratteri di controllo non stampabili (`\0`, `\x1B`). Quoting RFC 4180 separato dalla neutralizzazione. | Ispezione file CSV esportato con fogli di calcolo. |
+| **2. Conformità RFC 4180 e UTF-8 BOM** | `escapeCsvField`, `generateDossierCsv` in `dossier.ts` | **Superato (100%)**: `tests/unit/dossier.test.ts` (test 5, 6). Delimitatori con virgola, raddoppio doppi apici `""`, ritorno a capo `\r\n`, Byte Order Mark UTF-8 (`\uFEFF`) presente in testa per compatibilità con Microsoft Excel su Windows. | Verifica apertura su Microsoft Excel e LibreOffice Calc. |
+| **3. Esclusione Tassativa Dati Riservati (T18)** | `generateDossierCsv` e `RawDossierRow` | **Superato (100%)**: `tests/unit/dossier.test.ts` (test 7). Nessun campo riservato presente nel CSV (zero email, codici fiscali, password hash, token, percorsi interni dello storage privato). | Audit statico dello schema e dei campi esportati. |
+| **4. Servizio di Estrazione e Regole Classifica** | `getDossierSegnalazioni` in `src/lib/domain/dossier.ts` | **Superato (100%)**: `tests/unit/dossier.test.ts` (test 8, 9, 10). Filtro rigoroso su `APPROVATA` e `<> RITIRATA`; conteggio unicamente dei sostenitori con account attivo e verificato escluso l'autore; ordinamento e spareggio deterministico identici alla classifica (`sostegni_validi DESC, creata_il ASC, id ASC`); arricchimento categorie confermate; lista vuota senza errori se nessun record soddisfa i filtri. | Ispezione query parametrizzata SQL in conformità al modello logico. |
+| **5. Route Handler Download CSV (`/api/dossier/csv`)** | Handler `GET` in `src/app/api/dossier/csv/route.ts` | **Superato (100%)**: `tests/unit/dossier.test.ts` (test 11). Risposta 200 con `Content-Type: text/csv; charset=utf-8`, header `Content-Disposition: attachment; filename="dossier-priorita-milano-YYYY-MM-DD.csv"`, e `Cache-Control: no-cache, no-store, must-revalidate`. | Download da browser **rinviato al collaudo finale**. |
+| **6. Fail-Closed su Errore Database** | Gestione try/catch in `route.ts`, `page.tsx` e `classifica/page.tsx` | **Superato (100%)**: `tests/unit/dossier.test.ts` (test 12). In caso di crash o mancata connessione DB: API risponde con HTTP 503 ed errore JSON sanitizzato (nessun CSV vuoto apparentemente riuscito generato); `/dossier` e `/classifica` mostrano banner di indisponibilità con tasto di riprova (nessun conteggio zero inventato). | Verifica gestione errori di rete simulata con mock. |
+| **7. Pagina Stampabile e Regole `@media print`** | `src/app/dossier/page.tsx`, `print-button.tsx`, `src/app/globals.css` | **Superato a livello di build e typecheck**: tabella multi-pagina con `thead { display: table-header-group; }` e `tr { break-inside: avoid; }`; controlli interattivi (pulsante stampa, download CSV, filtri, navbar, footer) nascosti in stampa via `.print\\:hidden`. | Prova fisica di stampa su carta o visualizzazione anteprima di stampa nel browser **rinviata al collaudo finale**. Non dichiarata verificata senza osservazione diretta. |
+
+---
+
+## 7. Procedura di Collaudo Eseguita con Successo
 
 La sequenza completa eseguita con esito 100% positivo:
 
 ```bash
-# 1. Compilazione del codice finale (17 route di produzione pronte con Next.js Turbopack)
+# 1. Compilazione del codice finale (18 route applicative di produzione pronte con Next.js Turbopack)
 npm run build
 
 # 2. Controllo statico TypeScript (0 errori)
@@ -131,7 +147,7 @@ npm run typecheck
 # 3. Controllo qualità ESLint (0 errori, 0 warning nei nuovi moduli)
 npm run lint
 
-# 4. Test Unitari (134/134 superati, inclusi i 18 test del blocco Scelta del Luogo)
+# 4. Test Unitari (158/158 superati su 17 file, inclusi dossier CSV, IA reale e geocodifica)
 npm run test:unit
 
 # 5. Test Integrazione DB Aiven (45/45 superati su Aiven live)

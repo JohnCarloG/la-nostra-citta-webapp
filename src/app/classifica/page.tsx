@@ -9,8 +9,9 @@ export default async function ClassificaPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const categoriaId = params.categoria || undefined;
 
-  let categorie: any[] = [];
-  let classifica: any[] = [];
+  let categorie: Awaited<ReturnType<typeof getCategorieAttive>> = [];
+  let classifica: Awaited<ReturnType<typeof getClassificaSegnalazioni>> = [];
+  let dbError = false;
 
   try {
     const [cats, ranking] = await Promise.all([
@@ -20,6 +21,7 @@ export default async function ClassificaPage({ searchParams }: PageProps) {
     categorie = cats;
     classifica = ranking;
   } catch (err) {
+    dbError = true;
     console.error('Errore recupero priorità civiche:', err);
   }
 
@@ -27,15 +29,31 @@ export default async function ClassificaPage({ searchParams }: PageProps) {
 
   return (
     <main className="page-container py-8 flex flex-col gap-6">
-      {/* Testata della pagina */}
-      <div className="border-b border-[var(--border-light)] pb-4">
-        <h1 className="page-title">
-          Priorità civiche del territorio
-        </h1>
-        <p className="text-sm text-[var(--text-secondary)] mt-1 max-w-3xl">
-          Elenco ordinato delle segnalazioni pubbliche in base al numero di sostegni espressi dai cittadini verificati.
-          Questo elenco costituisce il riferimento civico per le richieste da sottoporre ai rappresentanti locali.
-        </p>
+      {/* Testata della pagina con collegamento al Dossier */}
+      <div className="border-b border-[var(--border-light)] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="page-title">
+            Priorità civiche del territorio
+          </h1>
+          <p className="text-sm text-[var(--text-secondary)] mt-1 max-w-2xl">
+            Elenco ordinato delle segnalazioni pubbliche in base al numero di sostegni espressi dai cittadini verificati.
+            Questo elenco costituisce il riferimento civico per le richieste da sottoporre ai rappresentanti locali.
+          </p>
+        </div>
+
+        <Link
+          href={categoriaId ? `/dossier?categoria=${categoriaId}` : '/dossier'}
+          className="btn btn-primary btn-sm flex items-center gap-1.5 self-start sm:self-auto shrink-0"
+          id="btn-vai-dossier"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+          <span>Dossier Candidati (CSV/Stampa)</span>
+        </Link>
       </div>
 
       {/* Riquadro istituzionale sulle regole di conteggio */}
@@ -85,8 +103,21 @@ export default async function ClassificaPage({ searchParams }: PageProps) {
         )}
       </form>
 
-      {/* Tabella o stato vuoto */}
-      {classifica.length === 0 ? (
+      {/* Gestione Errore Database vs Stato Vuoto Reale */}
+      {dbError ? (
+        <div className="alert alert-error flex flex-col gap-2 py-4" role="alert">
+          <strong className="text-sm font-bold">Servizio temporaneamente non disponibile</strong>
+          <p className="text-xs text-[var(--text-secondary)]">
+            Si è verificato un errore di comunicazione con il database durante il recupero della classifica.
+          </p>
+          <Link
+            href={categoriaId ? `/classifica?categoria=${categoriaId}` : '/classifica'}
+            className="btn btn-primary btn-xs self-start mt-1"
+          >
+            Ricarica pagina
+          </Link>
+        </div>
+      ) : classifica.length === 0 ? (
         <div className="empty-state">
           <p className="text-sm font-semibold text-[var(--text-primary)]">
             Nessuna segnalazione presente nella categoria selezionata

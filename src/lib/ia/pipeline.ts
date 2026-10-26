@@ -10,6 +10,7 @@ import {
   AllowedCategory
 } from './types';
 import { createMockPipelineAdapters } from './mock-adapters';
+import { createRealPipelineAdapters } from './real-adapters';
 import {
   validateModerationOutput,
   validateClassificationOutput,
@@ -52,10 +53,15 @@ export async function eseguiAnalisiSegnalazione(
   segnalazioneId: string,
   revisione: number,
   customAdapters?: Partial<PipelineAdapters>,
-  options?: { timeoutMs?: number }
+  options?: { timeoutMs?: number; adapterMode?: 'real' | 'mock' }
 ): Promise<PipelineExecutionResult> {
+  const isRealMode = options?.adapterMode === 'real' || process.env.AI_ADAPTER_MODE === 'real';
+  const baseAdapters: PipelineAdapters = isRealMode
+    ? createRealPipelineAdapters()
+    : createMockPipelineAdapters();
+
   const adapters: PipelineAdapters = {
-    ...createMockPipelineAdapters(),
+    ...baseAdapters,
     ...customAdapters
   };
   const timeoutMs = options?.timeoutMs ?? 5000;
@@ -257,6 +263,36 @@ export async function eseguiAnalisiSegnalazione(
             esito: moderationOutput.verdict,
             punteggio: moderationOutput.optional_score,
             dettagli_json: JSON.stringify({ reasons: moderationOutput.reasons, note: 'Revisione superata' }),
+            completata_il: new Date()
+          },
+          update: {
+            stato_esecuzione: 'OBSOLETE'
+          }
+        });
+      }
+
+      if (classificationOutput) {
+        await tx.analisiIa.upsert({
+          where: {
+            chiave_idempotenza: {
+              segnalazione_id: segnalazioneId,
+              revisione,
+              modulo: 'CLASSIFICAZIONE',
+              input_hash: classHash,
+              versione_modello: classificationOutput.model_version,
+              versione_policy: 'policy-v1.0'
+            }
+          },
+          create: {
+            segnalazione_id: segnalazioneId,
+            revisione,
+            modulo: 'CLASSIFICAZIONE',
+            versione_modello: classificationOutput.model_version,
+            versione_policy: 'policy-v1.0',
+            input_hash: classHash,
+            stato_esecuzione: 'OBSOLETE',
+            esito: 'OBSOLETE',
+            dettagli_json: JSON.stringify({ note: 'Revisione superata' }),
             completata_il: new Date()
           },
           update: {

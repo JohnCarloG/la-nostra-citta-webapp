@@ -165,7 +165,7 @@ export default function ComitatoActionsForm({
                 <select
                   id={`mod-dec-${segnalazioneId}`}
                   value={modDecision}
-                  onChange={e => setModDecision(e.target.value as any)}
+                  onChange={e => setModDecision(e.target.value as 'APPROVATA' | 'IN_REVISIONE' | 'RIFIUTATA')}
                   className="form-input text-xs py-1"
                 >
                   <option value="APPROVATA">APPROVA (Pubblica per sostegno)</option>
@@ -218,7 +218,7 @@ export default function ComitatoActionsForm({
                 <select
                   id={`av-dec-${segnalazioneId}`}
                   value={avStato}
-                  onChange={e => setAvStato(e.target.value as any)}
+                  onChange={e => setAvStato(e.target.value as 'PRESA_IN_CARICO' | 'INVIATA_AI_CANDIDATI' | 'RITIRATA')}
                   className="form-input text-xs py-1"
                 >
                   <option value="PRESA_IN_CARICO">In carico al comitato</option>

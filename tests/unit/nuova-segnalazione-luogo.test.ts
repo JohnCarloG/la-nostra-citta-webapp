@@ -16,7 +16,10 @@ import {
   rimuoviPosizione,
   GeocodingResult,
 } from '@/lib/geo/location-picker';
-import { GET as geocodingSearchHandler } from '@/app/api/geo/search/route';
+import {
+  GET as geocodingSearchHandler,
+  _clearGeocodingCacheForTests
+} from '@/app/api/geo/search/route';
 import { NextRequest } from 'next/server';
 
 // Fixture di risultati geocodifica (Milano)
@@ -307,5 +310,41 @@ describe('Route Handler Geocodifica (/api/geo/search) con Fixture e Mock', () =>
     expect(res.status).toBe(502);
     expect(data.error).toContain('Servizio di geocodifica non raggiungibile');
     expect(data.results).toEqual([]);
+  });
+
+  it('Verifica funzionamento cache in memoria (X-Cache: HIT senza ulteriori chiamate a fetch)', async () => {
+    _clearGeocodingCacheForTests();
+
+    const mockResponse = [
+      {
+        place_id: 999,
+        lat: '45.4700',
+        lon: '9.1800',
+        display_name: 'Piazza Castello, Milano',
+        address: { road: 'Piazza Castello', city: 'Milano' }
+      }
+    ];
+
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => mockResponse
+    });
+    global.fetch = fetchSpy;
+
+    // Prima chiamata: Cache MISS
+    const req1 = new NextRequest('http://localhost:3000/api/geo/search?q=piazza%20castello');
+    const res1 = await geocodingSearchHandler(req1);
+    expect(res1.headers.get('X-Cache')).toBe('MISS');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // Seconda chiamata con la stessa query: Cache HIT (nessuna nuova chiamata fetch)
+    const req2 = new NextRequest('http://localhost:3000/api/geo/search?q=Piazza%20Castello');
+    const res2 = await geocodingSearchHandler(req2);
+    expect(res2.headers.get('X-Cache')).toBe('HIT');
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // Fetch non è stato chiamato di nuovo!
+    const data2 = await res2.json();
+    expect(data2.results).toHaveLength(1);
+    expect(data2.results[0].titolo).toBe('Piazza Castello');
   });
 });

@@ -1,0 +1,225 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2200 1400" width="2200" height="1400" style="background:#f8fafc; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Filtri ombra per box entita -->
+    <filter id="shadow" x="-5%" y="-5%" width="115%" height="115%">
+      <feDropShadow dx="2" dy="4" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+    <filter id="badgeShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <!-- Intestazione Diagramma -->
+  <text x="60" y="60" font-size="28" font-weight="700" fill="#0f172a">La Nostra Città, Il Nostro Futuro — Modello Concettuale Entità-Relazioni (ER)</text>
+  <text x="60" y="92" font-size="15" fill="#64748b">Schema concettuale del nucleo di dominio (da 04_MODELLO_LOGICO.md) con cardinalità min/max e relazioni associative.</text>
+
+  <!-- ================= RELAZIONI E LINEE DI CONNESSIONE ================= -->
+
+  <!-- 1. UTENTE --- RISIEDE_IN --- QUARTIERE -->
+  <line x1="330" y1="260" x2="480" y2="260" stroke="#475569" stroke-width="2.5"/>
+  <polygon points="405,235 450,260 405,285 360,260" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="405" y="264" font-size="11" font-weight="700" fill="#1e3a8a" text-anchor="middle">RISIEDE_IN</text>
+  <!-- Cardinalita -->
+  <g filter="url(#badgeShadow)">
+    <rect x="345" y="222" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="370" y="238" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(0,N)</text>
+    <rect x="425" y="222" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="450" y="238" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(0,1)</text>
+  </g>
+
+  <!-- 2. UTENTE --- CREA --- SEGNALAZIONE -->
+  <line x1="790" y1="260" x2="1160" y2="260" stroke="#475569" stroke-width="2.5"/>
+  <polygon points="975,230 1025,260 975,290 925,260" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="975" y="264" font-size="12" font-weight="700" fill="#1e3a8a" text-anchor="middle">CREA</text>
+  <g filter="url(#badgeShadow)">
+    <rect x="815" y="222" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="840" y="238" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(0,N)</text>
+    <rect x="1090" y="222" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="1115" y="238" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(1,1)</text>
+  </g>
+
+  <!-- 3. UTENTE --- SOSTIENE --- SEGNALAZIONE (Arco inferiore) -->
+  <path d="M 660,530 L 660,620 L 1280,620 L 1280,530" fill="none" stroke="#475569" stroke-width="2.5"/>
+  <polygon points="970,585 1025,620 970,655 915,620" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="970" y="624" font-size="12" font-weight="700" fill="#1e3a8a" text-anchor="middle">SOSTIENE</text>
+  <text x="970" y="675" font-size="11" fill="#475569" text-anchor="middle">[data_sostegno]</text>
+  <g filter="url(#badgeShadow)">
+    <rect x="680" y="550" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="705" y="566" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(0,N)</text>
+    <rect x="1210" y="550" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="1235" y="566" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(0,N)</text>
+  </g>
+
+  <!-- 4. SEGNALAZIONE --- HA --- MEDIA -->
+  <line x1="1500" y1="260" x2="1730" y2="260" stroke="#475569" stroke-width="2.5"/>
+  <polygon points="1615,230 1665,260 1615,290 1565,260" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="1615" y="264" font-size="12" font-weight="700" fill="#1e3a8a" text-anchor="middle">HA</text>
+  <g filter="url(#badgeShadow)">
+    <rect x="1520" y="222" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="1545" y="238" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(1,N)</text>
+    <rect x="1665" y="222" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="1690" y="238" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(1,1)</text>
+  </g>
+
+  <!-- 5. SEGNALAZIONE --- CLASSIFICATA_IN --- CATEGORIA -->
+  <line x1="1380" y1="530" x2="1380" y2="820" stroke="#475569" stroke-width="2.5"/>
+  <polygon points="1380,640 1445,675 1380,710 1315,675" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="1380" y="679" font-size="11" font-weight="700" fill="#1e3a8a" text-anchor="middle">CLASSIFICATA_IN</text>
+  <g filter="url(#badgeShadow)">
+    <rect x="1395" y="555" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="1420" y="571" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(0,N)</text>
+    <rect x="1395" y="775" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="1420" y="791" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(0,N)</text>
+  </g>
+
+  <!-- 6. SEGNALAZIONE --- HA_STORIA --- EVENTO_STATO -->
+  <path d="M 1190,530 L 1190,730 L 780,730 L 780,820" fill="none" stroke="#475569" stroke-width="2.5"/>
+  <polygon points="985,700 1045,730 985,760 925,730" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="985" y="734" font-size="11" font-weight="700" fill="#1e3a8a" text-anchor="middle">HA_STORIA</text>
+  <g filter="url(#badgeShadow)">
+    <rect x="1165" y="555" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="1190" y="571" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(1,N)</text>
+    <rect x="755" y="775" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="780" y="791" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(1,1)</text>
+  </g>
+
+  <!-- 7. UTENTE --- ESEGUE --- EVENTO_STATO -->
+  <line x1="560" y1="530" x2="560" y2="820" stroke="#475569" stroke-width="2.5"/>
+  <polygon points="560,650 615,680 560,710 505,680" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="560" y="684" font-size="11" font-weight="700" fill="#1e3a8a" text-anchor="middle">ESEGUE</text>
+  <g filter="url(#badgeShadow)">
+    <rect x="575" y="555" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="600" y="571" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(0,N)</text>
+    <rect x="575" y="775" width="50" height="24" rx="4" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="600" y="791" font-size="12" font-weight="800" fill="#854d0e" text-anchor="middle">(0,1)</text>
+  </g>
+
+  <!-- ================= ENTITA CONCETTUALI ================= -->
+
+  <!-- Entita: QUARTIERE -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="170" width="260" height="150" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <path d="M 70,178 Q 70,170 78,170 L 322,170 Q 330,170 330,178 L 330,210 L 70,210 Z" fill="#1e293b"/>
+    <text x="200" y="196" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">QUARTIERE</text>
+    <text x="90" y="240" font-size="13" font-weight="700" fill="#0f172a">* id (PK)</text>
+    <text x="90" y="270" font-size="13" fill="#334155">nome (UQ)</text>
+  </g>
+
+  <!-- Entita: UTENTE -->
+  <g filter="url(#shadow)">
+    <rect x="480" y="170" width="310" height="360" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <path d="M 480,178 Q 480,170 488,170 L 782,170 Q 790,170 790,178 L 790,210 L 480,210 Z" fill="#1e293b"/>
+    <text x="635" y="196" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">UTENTE</text>
+    <text x="500" y="240" font-size="13" font-weight="700" fill="#0f172a">* id (PK)</text>
+    <text x="500" y="268" font-size="13" fill="#334155">nome</text>
+    <text x="500" y="296" font-size="13" fill="#334155">cognome</text>
+    <text x="500" y="324" font-size="13" fill="#334155">email_normalizzata (UQ)</text>
+    <text x="500" y="352" font-size="13" fill="#334155">password_hash</text>
+    <text x="500" y="380" font-size="13" fill="#334155">codice_fiscale (UQ)</text>
+    <text x="500" y="408" font-size="13" fill="#334155">ruolo (CITTADINO, COMITATO)</text>
+    <text x="500" y="436" font-size="13" fill="#334155">stato_account (ATTIVO, SOSPESO)</text>
+    <text x="500" y="464" font-size="13" fill="#334155">verificato_il (data/ora)</text>
+    <text x="500" y="492" font-size="13" fill="#334155">creato_il (timestamp)</text>
+  </g>
+
+  <!-- Entita: SEGNALAZIONE -->
+  <g filter="url(#shadow)">
+    <rect x="1160" y="170" width="340" height="360" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <path d="M 1160,178 Q 1160,170 1168,170 L 1492,170 Q 1500,170 1500,178 L 1500,210 L 1160,210 Z" fill="#1e293b"/>
+    <text x="1330" y="196" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">SEGNALAZIONE</text>
+    <text x="1180" y="240" font-size="13" font-weight="700" fill="#0f172a">* id (PK)</text>
+    <text x="1180" y="268" font-size="13" fill="#334155">descrizione (testo)</text>
+    <text x="1180" y="296" font-size="13" fill="#334155">latitudine, longitudine</text>
+    <text x="1180" y="324" font-size="13" fill="#334155">origine_posizione (MANUALE, EXIF)</text>
+    <text x="1180" y="352" font-size="13" fill="#334155">stato_avanzamento</text>
+    <text x="1180" y="380" font-size="13" fill="#334155">stato_moderazione</text>
+    <text x="1180" y="408" font-size="13" fill="#334155">revisione (intero positivo)</text>
+    <text x="1180" y="436" font-size="13" fill="#334155">creata_il (timestamp)</text>
+    <text x="1180" y="464" font-size="13" fill="#334155">aggiornata_il (timestamp)</text>
+  </g>
+
+  <!-- Entita: MEDIA -->
+  <g filter="url(#shadow)">
+    <rect x="1730" y="170" width="320" height="360" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <path d="M 1730,178 Q 1730,170 1738,170 L 2042,170 Q 2050,170 2050,178 L 2050,210 L 1730,210 Z" fill="#1e293b"/>
+    <text x="1890" y="196" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">MEDIA</text>
+    <text x="1750" y="240" font-size="13" font-weight="700" fill="#0f172a">* id (PK)</text>
+    <text x="1750" y="268" font-size="13" fill="#334155">storage_key (UQ)</text>
+    <text x="1750" y="296" font-size="13" fill="#334155">tipo (FOTO, VIDEO)</text>
+    <text x="1750" y="324" font-size="13" fill="#334155">mime (tipo MIME)</text>
+    <text x="1750" y="352" font-size="13" fill="#334155">byte_size (intero > 0)</text>
+    <text x="1750" y="380" font-size="13" fill="#334155">durata_secondi (video)</text>
+    <text x="1750" y="408" font-size="13" fill="#334155">sha256 (hash binario)</text>
+    <text x="1750" y="436" font-size="13" fill="#334155">stato_file (READY, QUARANTENA)</text>
+    <text x="1750" y="464" font-size="13" fill="#334155">exif_lat, exif_lon</text>
+    <text x="1750" y="492" font-size="13" fill="#334155">derivato_key (UQ)</text>
+  </g>
+
+  <!-- Entita: CATEGORIA -->
+  <g filter="url(#shadow)">
+    <rect x="1230" y="820" width="300" height="210" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <path d="M 1230,828 Q 1230,820 1238,820 L 1522,820 Q 1530,820 1530,828 L 1530,860 L 1230,860 Z" fill="#1e293b"/>
+    <text x="1380" y="846" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">CATEGORIA</text>
+    <text x="1250" y="890" font-size="13" font-weight="700" fill="#0f172a">* id (PK)</text>
+    <text x="1250" y="920" font-size="13" fill="#334155">codice (UQ)</text>
+    <text x="1250" y="950" font-size="13" fill="#334155">nome (stringa)</text>
+    <text x="1250" y="980" font-size="13" fill="#334155">attiva (booleano)</text>
+  </g>
+
+  <!-- Entita: EVENTO_STATO -->
+  <g filter="url(#shadow)">
+    <rect x="460" y="820" width="360" height="310" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <path d="M 460,828 Q 460,820 468,820 L 812,820 Q 820,820 820,828 L 820,860 L 460,860 Z" fill="#1e293b"/>
+    <text x="640" y="846" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">EVENTO_STATO</text>
+    <text x="480" y="890" font-size="13" font-weight="700" fill="#0f172a">* id (PK)</text>
+    <text x="480" y="920" font-size="13" fill="#334155">tipo_attore (UTENTE, SISTEMA)</text>
+    <text x="480" y="950" font-size="13" fill="#334155">ambito (AVANZAMENTO, MODERAZIONE)</text>
+    <text x="480" y="980" font-size="13" fill="#334155">da_stato (stato precedente)</text>
+    <text x="480" y="1010" font-size="13" fill="#334155">a_stato (nuovo stato)</text>
+    <text x="480" y="1040" font-size="13" fill="#334155">motivazione (stringa)</text>
+    <text x="480" y="1070" font-size="13" fill="#334155">revisione (riferimento)</text>
+    <text x="480" y="1100" font-size="13" fill="#334155">creato_il (timestamp)</text>
+  </g>
+
+  <!-- ================= LEGENDA E CONVENZIONI ================= -->
+  <g filter="url(#shadow)">
+    <rect x="1660" y="820" width="460" height="370" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+    <path d="M 1660,828 Q 1660,820 1668,820 L 2112,820 Q 2120,820 2120,828 L 2120,860 L 1660,860 Z" fill="#1e293b"/>
+    <text x="1890" y="846" font-size="16" font-weight="700" fill="#ffffff" text-anchor="middle">LEGENDA E CONVENZIONI ER</text>
+
+    <!-- Simbolo Entita -->
+    <rect x="1690" y="885" width="45" height="25" rx="3" fill="#1e293b"/>
+    <text x="1750" y="902" font-size="13" font-weight="700" fill="#0f172a">Rettangolo:</text>
+    <text x="1835" y="902" font-size="13" fill="#334155">Entità concettuale di dominio</text>
+
+    <!-- Simbolo Relazione -->
+    <polygon points="1712,925 1735,940 1712,955 1690,940" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+    <text x="1750" y="944" font-size="13" font-weight="700" fill="#0f172a">Rombo:</text>
+    <text x="1810" y="944" font-size="13" fill="#334155">Relazione tra entità</text>
+
+    <!-- Simbolo Cardinalita -->
+    <rect x="1690" y="968" width="48" height="24" rx="3" fill="#fef08a" stroke="#ca8a04" stroke-width="1"/>
+    <text x="1714" y="984" font-size="11" font-weight="800" fill="#854d0e" text-anchor="middle">(m,M)</text>
+    <text x="1750" y="985" font-size="13" font-weight="700" fill="#0f172a">Badge (min, max):</text>
+    <text x="1880" y="985" font-size="13" fill="#334155">Cardinalità della partecipazione</text>
+
+    <line x1="1690" y1="1015" x2="2090" y2="1015" stroke="#e2e8f0" stroke-width="1"/>
+
+    <!-- Definizioni e note di modello -->
+    <text x="1690" y="1040" font-size="12" font-weight="700" fill="#0f172a">* id (PK):</text>
+    <text x="1750" y="1040" font-size="12" fill="#475569">Identificatore univoco essenziale dell'entità</text>
+
+    <text x="1690" y="1068" font-size="12" font-weight="700" fill="#0f172a">(UQ):</text>
+    <text x="1730" y="1068" font-size="12" fill="#475569">Attributo con vincolo di unicità applicativo/logico</text>
+
+    <text x="1690" y="1096" font-size="12" font-weight="700" fill="#0f172a">[attributo]:</text>
+    <text x="1770" y="1096" font-size="12" fill="#475569">Attributo proprio della relazione (es. data sostegno)</text>
+
+    <text x="1690" y="1126" font-size="12" fill="#334155">Nel passaggio al <tspan font-weight="700">Modello Logico</tspan> (04_MODELLO_LOGICO.md):</text>
+    <text x="1690" y="1148" font-size="12" fill="#334155">• <tspan font-weight="700">SOSTIENE</tspan> diviene tabella ponte <tspan font-weight="700">SOSTEGNO</tspan> (utente_id, segnalazione_id)</text>
+    <text x="1690" y="1170" font-size="12" fill="#334155">• <tspan font-weight="700">CLASSIFICATA_IN</tspan> diviene <tspan font-weight="700">SEGNALAZIONE_CATEGORIA</tspan> (M:N)</text>
+  </g>
+
+  <!-- Piede e note concettuali -->
+  <text x="60" y="1350" font-size="13" fill="#64748b">Nota di conformità: Le tabelle tecniche di supporto (AnalisiIA, Outbox, TokenAccount, Sessione, AuditEvento, UploadTemporaneo) appartengono all'estensione implementativa e fisica (04_MODELLO_LOGICO.md) e non alterano il modello concettuale.</text>
+</svg>

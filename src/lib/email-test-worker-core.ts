@@ -82,12 +82,13 @@ export async function executeTestEmailWorker(
         emailSent: false
       };
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       success: false,
       mode: options.send ? 'REAL_SEND' : 'DRY_RUN_VERIFICATION',
       jobId: options.jobId,
-      error: `Verifica live del database fallita: ${err.message}`,
+      error: `Verifica live del database fallita: ${message}`,
       outboxUpdated: false,
       emailSent: false
     };

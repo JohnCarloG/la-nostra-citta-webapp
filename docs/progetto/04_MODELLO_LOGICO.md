@@ -1,6 +1,6 @@
 # Modello logico relazionale e dizionario
 ## Convenzioni
-PK = chiave primaria; FK = chiave esterna; UQ = univoco; ? = nullable; tutti gli altri attributi sono obbligatori salvo default indicato. ID tecnici UUID generati dal server; timestamp UTC con fuso. Le relazioni del nucleo corrispondono all'immagine 03. Gli attributi tecnici di gestione e sicurezza sono raffinamenti logici, non nuove entità concettuali. Nessun campo contiene liste separate da virgole.
+PK = chiave primaria; FK = chiave esterna; UQ = univoco; ? = nullable; tutti gli altri attributi sono obbligatori salvo default indicato. ID tecnici UUID generati dal server; timestamp UTC con fuso. Le relazioni del nucleo corrispondono al diagramma ER concettuale (`docs/progetto/schema_er_concettuale.png`, sorgente vettoriale `schema_er_concettuale.svg` e Mermaid `schema_er_concettuale.mmd`). Gli attributi tecnici di gestione e sicurezza sono raffinamenti logici, non nuove entità concettuali. Nessun campo contiene liste separate da virgole.
 
 ## Nucleo normalizzato
 QUARTIERE(id PK, nome UQ). Catalogo amministrato; può essere vuoto inizialmente senza impedire registrazione.
@@ -42,8 +42,21 @@ Ogni tabella descrive un fatto e gli attributi dipendono dalla chiave. Sostegni 
 Stato corrente e storico sono una ridondanza intenzionale per letture efficienti: non sostituire uno con l'altro; aggiornarli atomicamente e testarne la coerenza. Conteggio sostegni è derivato, non memorizzato nel nucleo. Metadati EXIF sono evidenze sul file, coordinate della segnalazione sono la decisione confermata: possono differire legittimamente.
 
 ## Applicazione dei vincoli nel DB e nel servizio
-DB: PK, FK, UNIQUE, NOT NULL, CHECK su domini/numeri/coppie nullable; indici sulle FK e sulle query principali. Servizio transazionale: ruolo e verifica, autosostegno, transizioni, consumo upload, visibilità e revisione IA. Vincoli intertabella essenziali (ultimo media, autore sostegno) possono avere trigger di difesa: documentare quali sono imposti dal DB e quali richiedono l'unico writer applicativo. Non chiamare CHECK un controllo che interroga altre tabelle.
-Indice SEGNALAZIONE(stato_moderazione,stato_avanzamento,creata_il,id); SOSTEGNO(segnalazione_id); EVENTO_STATO(segnalazione_id,creato_il,id); ANALISI_IA(stato_esecuzione,creata_il); OUTBOX(elaborata_il,prossimo_tentativo_il). Per mappe su volumi grandi aggiungere indice spaziale nel DB scelto.
+- **Vincoli garantiti dal Database (MySQL 8.4 InnoDB)**:
+  - Chiavi Primarie (PK) e Univoche (UNIQUE);
+  - Integrità referenziale (FK) con `ON DELETE RESTRICT ON UPDATE RESTRICT`;
+  - CHECK constraints immediati su riga singola (7 vincoli verificati: `chk_segnalazione_coords`, `chk_media_bytesize`, `chk_exif_coords`, `chk_analisi_revisione`, `chk_analisi_punteggio`, `chk_audit_attore`, `chk_evento_attore`);
+  - `FOR UPDATE SKIP LOCKED` e lock di riga per concorrenza priva di stalli (Outbox, transizioni di stato).
+- **Vincoli garantiti dal Servizio Applicativo Transazionale**:
+  - Cardinalità minima (almeno 1 media valido e non scaduto associato a ogni segnalazione creata);
+  - Divieto di autosostegno (`autore_id !== utente_id`);
+  - Verifica stato account attivo e verificato al momento del sostegno;
+  - Consumo atomico monouso degli upload temporanei;
+  - Politica di visibilità pubblica unificata (`APPROVATA` e `<> RITIRATA`);
+  - Idempotenza e rispetto delle decisioni umane contro automazioni IA tardive (`SKIPPED_HUMAN_OVERRIDE`).
+  - *Nota metodologica*: MySQL 8 InnoDB non supporta vincoli o trigger differiti (differibili a fine transazione, come in PostgreSQL); pertanto i vincoli multi-tabella e la cardinalità minima sul genitore sono rigorosamente governati dal servizio applicativo transazionale come unico writer di dominio.
+
+Indice SEGNALAZIONE(stato_moderazione,stato_avanzamento,creata_il,id); SOSTEGNO(segnalazione_id); EVENTO_STATO(segnalazione_id,creato_il,id); ANALISI_IA(stato_esecuzione,creata_il); OUTBOX(elaborata_il,prossimo_tentativo_il).
 FK verso fatti storici: RESTRICT. Disattivazione utente conserva riferimenti; anonimizzazione/cancellazione reale richiede una procedura dedicata con politiche concordate. Eliminazione allegato vietata se lascia senza prova una segnalazione inviata.
 
 ## Query di classifica — SQL illustrativo, adattare al DB scelto

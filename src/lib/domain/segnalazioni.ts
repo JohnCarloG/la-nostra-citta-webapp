@@ -30,22 +30,23 @@ export const DEFAULT_CATEGORIE = [
 
 /**
  * Assicura che le categorie predefinite siano presenti a catalogo.
+ * Procedura esplicita di setup: preserva lo stato delle categorie esistenti
+ * (comprese quelle disattivate) aggiornando solo il nome.
  */
 export async function ensureDefaultCategorie() {
   for (const cat of DEFAULT_CATEGORIE) {
     await prisma.categoria.upsert({
       where: { codice: cat.codice },
-      update: { attiva: true },
+      update: { nome: cat.nome },
       create: { codice: cat.codice, nome: cat.nome, attiva: true }
     });
   }
 }
 
 /**
- * Recupera l'elenco delle categorie attive
+ * Recupera l'elenco delle categorie attive (sola lettura)
  */
 export async function getCategorieAttive() {
-  await ensureDefaultCategorie();
   return prisma.categoria.findMany({
     where: { attiva: true },
     orderBy: { nome: 'asc' }

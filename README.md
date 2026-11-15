@@ -51,16 +51,14 @@ SMTP_USER="utente@gmail.com"
 SMTP_PASS="password_per_le_app"
 EMAIL_FROM="La Nostra Città <noreply@lanostracitta.it>"
 
-# Modalità Adattatori IA ("mock" per sviluppo offline deterministico, "real" per adapter reali)
-AI_ADAPTER_MODE="mock"
+# Modalità Adattatori IA ("mock" per sviluppo offline deterministico, "ollama" per inferenza locale, "real" per adapter commerciali)
+AI_ADAPTER_MODE="ollama"
+# Modello Ollama locale ("qwen3-vl:4b-instruct" predefinito, oppure "qwen3-vl:2b-instruct")
+OLLAMA_MODEL="qwen3-vl:4b-instruct"
 
-# Per abilitare il provider reale di moderazione NLP (OpenAI Moderations API):
+# Per modalità con provider commerciale opzionale:
 # AI_MODERATION_API_KEY="sk-..."
 # AI_MODERATION_ENDPOINT="https://api.openai.com/v1/moderations"
-
-# Per abilitare il provider reale di classificazione civica multi-label:
-# AI_CLASSIFICATION_API_KEY="sk-..."
-# AI_CLASSIFICATION_ENDPOINT="https://api.example.com/classify"
 ```
 
 ### 3.3 Ambiente di Test e Collaudo (`.env.test`)
@@ -170,20 +168,26 @@ L'adattatore `LocalDiskStorageProvider` opera sul file system locale della singo
 - **Stato di verifica**: Chiamata reale non ancora collaudata con credenziali live.
 - Se la credenziale `AI_MODERATION_API_KEY` non è configurata, l'adattatore solleva `MissingProviderCredentialError` e la pipeline applica la **policy conservativa fail-closed**, instradando la segnalazione a `IN_REVISIONE` (nessuna approvazione arbitraria o simulata).
 
-### 8.3 Classificazione Civica Automatica (`ProviderClassificationAdapter` — RF08)
-- Pipeline presente e integrata; architettura a tassonomia chiusa ricavata dalle categorie ammesse (`AllowedCategory`).
-- Validazione stringente degli identificativi restituiti (`validateClassificationOutput`), con scarto di codici sconosciuti e duplicati.
-- Suggerimenti salvati in `SuggerimentoCategoria`, rigidamente separati dalle categorie confermate `SegnalazioneCategoria`.
-- Preservazione dell'override umano (`SKIPPED_HUMAN_OVERRIDE`) e gestione risultati obsoleti (`OBSOLETE`).
-- **Stato del classificatore**: Attualmente simulato con mock deterministico (`DeterministicMockClassificationAdapter`, `isSimulated = true`) per la suite di test automatici in CI.
-- **Adattatore reale**: `ProviderClassificationAdapter` implementato (`isSimulated = false`); selezione esplicita mock/reale; nessun fallback silenzioso dal reale al mock (solleva `MissingProviderCredentialError` se non configurato).
-- **Scelta del modello**: In attesa di decisione tra soluzione locale (ONNX/embeddings) e provider cloud esterno. Per i dettagli tecnici, requisiti hardware e limiti, consultare:  
-  👉 **[`docs/progetto/CONFRONTO_CLASSIFICAZIONE_IA.md`](docs/progetto/CONFRONTO_CLASSIFICAZIONE_IA.md)**.
-
-### 8.4 Coerenza Visivo-Testuale (`DeterministicMockCoherenceAdapter` — RF10)
-- Pipeline presente; verifica visivo-testuale attualmente simulata (`DeterministicMockCoherenceAdapter`).
-- Gestione allegato video non supportato indirizzato esplicitamente a `IN_REVISIONE` con motivazione a verbale.
-- Costituisce il blocco di sviluppo successivo (RF10).
+### 8.3 Classificazione Civica Automatica (RF08) e Coerenza Visivo-Testuale (RF10) tramite Ollama Locale
+- **Scelta definitiva architetturale**: Integrazione locale tramite **Ollama** (`src/lib/ia/ollama.ts`), attiva impostando `AI_ADAPTER_MODE="ollama"`.
+- **Endpoint e Modelli Autorizzati**:
+  - Endpoint strettamente confinato a `http://127.0.0.1:11434/api/chat` con `redirect: 'error'`. Nessun accesso a host remoti né chiavi esterne.
+  - Modello predefinito: `qwen3-vl:4b-instruct`.
+  - Modello alternativo leggero selezionabile via variabile d'ambiente: `OLLAMA_MODEL="qwen3-vl:2b-instruct"`. Modelli non in whitelist vengono categoricamente respinti.
+- **RF08 (Classificazione Categorie Civiche)**:
+  - Invia rigorosamente solo testo della descrizione e array delle categorie a catalogo (`{ id, codice, nome }`).
+  - Forza Structured Outputs JSON con schema `{ ids: string[] }` vincolato all'enum degli ID ammessi.
+  - Deduplica gli identificativi restituiti e li salva in `SuggerimentoCategoria` senza toccare le categorie confermate.
+- **RF10 (Coerenza Visivo-Testuale)**:
+  - Utilizza esclusivamente l'immagine privata associata alla segnalazione, leggendo i byte raw dallo storage privato autorizzato e inviandoli in Base64 (nessun path locale o ID di storage inviato nel prompt).
+  - Limite di sicurezza: max 10 MB per immagine. Video gestiti restituendo `UNSUPPORTED` con motivazione a verbale.
+  - Verdetti ammessi: `CONSISTENT`, `UNCERTAIN`, `INCONSISTENT`.
+  - **Nessuna equiparazione a frode**: un verdetto `INCONSISTENT` o `UNCERTAIN` indirizza la segnalazione al comitato (`IN_REVISIONE`), senza accusare il cittadino di frode né impostare `RIFIUTATA`.
+- **RF07 (Moderazione)**:
+  - In modalità `ollama`, la moderazione è affidata esplicitamente alla revisione umana del comitato civico (`verdict: 'REVIEW'`), senza chiamate a modelli esterni né approvazioni simulate.
+- **Garanzia anti-bypass**:
+  - Nessun fallback silenzioso verso cloud o mock. Se Ollama non è in esecuzione o risponde con errore, l'errore viene intercettato e registrato come `FAILED` in `AnalisiIa` instradando a `IN_REVISIONE`.
+  - Smoke test diagnostico rapido senza connessione DB: `npx tsx scripts/check-ollama.ts`.
 
 ### 8.5 Ricerca Territoriale Milano (`/api/geo/search` — RF09)
 - Conforme alla Nominatim Usage Policy di OpenStreetMap:

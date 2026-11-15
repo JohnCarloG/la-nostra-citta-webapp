@@ -169,8 +169,17 @@ export function validateCoherenceOutput(data: unknown): CoherenceOutput {
     throw new InvalidProviderOutputError('COERENZA', 'reasons deve essere un array di stringhe');
   }
 
-  if (obj.optional_score !== undefined && (typeof obj.optional_score !== 'number' || isNaN(obj.optional_score))) {
-    throw new InvalidProviderOutputError('COERENZA', 'optional_score deve essere un numero valido');
+  if (
+    obj.optional_score !== undefined &&
+    (typeof obj.optional_score !== 'number' ||
+      isNaN(obj.optional_score) ||
+      obj.optional_score < 0 ||
+      obj.optional_score > 1)
+  ) {
+    throw new InvalidProviderOutputError(
+      'COERENZA',
+      'optional_score deve essere un numero valido compreso tra 0 e 1'
+    );
   }
 
   if (typeof obj.model_version !== 'string' || obj.model_version.trim().length === 0) {

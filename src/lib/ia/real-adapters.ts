@@ -232,13 +232,38 @@ export class ProviderModerationAdapter implements IModerationAdapter {
 
 /**
  * 3. Adattatore Reale per Classificazione Multi-Label Civica (ProviderClassificationAdapter)
- * Connessione a endpoint di classificazione con tassonomia chiusa:
- * - isSimulated = false (adattatore reale, mai simulato).
- * - Tassonomia chiusa ricavata rigorosamente dal catalogo categorie ammesse (allowed_categories).
- * - Nessun fallback silenzioso al mock: se mancano credenziali/endpoint, solleva MissingProviderCredentialError.
- * - Isolamento del testo della segnalazione.
- * - Validazione di schema rigida, scarto di identificativi inesistenti o duplicati.
- * - Gestione di timeout limitati via AbortSignal.
+ *
+ * NOTA SUL PROTOCOLLO HTTP E NATURA DELL'ADATTATORE:
+ * Questo componente implementa un CONTRATTO INTERNO / ADATTATORE PREDISPOSTO verso un
+ * microservizio dedicato o un backend proxy di classificazione con tassonomia chiusa.
+ * NON corrisponde alle API ufficiali dirette di OpenAI (/v1/chat/completions), Google Gemini
+ * (:generateContent), Anthropic (/v1/messages) o Mistral.
+ * Impostare un endpoint e una chiave API di OpenAI/Gemini direttamente in questo adapter NON
+ * lo rende compatibile e genererà errori HTTP o di parsing dello schema.
+ *
+ * CONTRATTO HTTP REALE:
+ * - Metodo: POST
+ * - Intestazioni:
+ *     Content-Type: application/json
+ *     Authorization: Bearer <AI_CLASSIFICATION_API_KEY>
+ *     User-Agent: LaNostraCitta-ClassificationWorker/1.0
+ * - Payload inviato (JSON body):
+ *     {
+ *       "text": string,
+ *       "allowed_categories": Array<{ id: string, codice: string, nome: string }>
+ *     }
+ * - Risposta attesa (HTTP 200 OK, JSON):
+ *     {
+ *       "model_version": string,
+ *       "suggestions": Array<{ category_id: string, optional_confidence?: number }>
+ *     }
+ * - Vincoli operativi:
+ *     - isSimulated = false (adattatore reale, mai simulato).
+ *     - Tassonomia chiusa ricavata rigorosamente dal catalogo categorie ammesse (allowed_categories).
+ *     - Nessun fallback silenzioso al mock: se mancano credenziali/endpoint, solleva MissingProviderCredentialError.
+ *     - Isolamento del testo della segnalazione.
+ *     - Validazione di schema rigida, scarto di identificativi inesistenti o duplicati (validateClassificationOutput).
+ *     - Gestione di timeout limitati via AbortSignal.
  */
 export class ProviderClassificationAdapter implements IClassificationAdapter {
   readonly name = 'provider-civic-classification';

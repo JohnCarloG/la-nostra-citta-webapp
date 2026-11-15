@@ -9,6 +9,7 @@ describe('Guardia di Sicurezza Database di Test (test-db.ts)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     process.env = { ...originalEnv };
+    delete process.env.SSL_CERT_PATH;
   });
 
   afterEach(() => {

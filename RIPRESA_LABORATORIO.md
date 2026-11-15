@@ -20,15 +20,23 @@ monitorare segnalazioni civiche. Include gestione transazionale forte, moderazio
 
 ## Stato Verifiche Attuale e Blocco TLS macOS
 
+- **Integrazione IA Locale (Ollama — RF08 e RF10)**:
+  - **RF08**: inferenza reale riuscita con `qwen3-vl:2b-instruct` (categoria «luce») e validazione a tassonomia chiusa coperta da unit test (`tests/unit/ollama.test.ts`, `tests/unit/ia-classification.test.ts`).
+  - **RF10**: contratti di coerenza visivo-testuale, parsing schema, lettura byte privati e video `UNSUPPORTED` implementati e testati offline (`tests/unit/ia-coherence.test.ts`, `tests/unit/ollama.test.ts`).
+  - **Collaudo visivo Ollama con modello live**: **RINVIATO** per disposizione esplicita dell'operatore (nessun rilancio smoke test visivo o incremento timeout nella sessione corrente).
 - **SMTP con Ricezione Reale**: **SUPERATO** (Singolo invio diagnostico verso casella concordata accettato da Gmail SMTP e recapito confermato dall'operatore. Nessun ulteriore invio diagnostico necessario).
 - **Flusso Completo di Verifica Email Reale**: **NON ESEGUITO** (In attesa dello sblocco della connessione database con TLS strict per eseguire l'attivazione end-to-end tramite app).
-- **Unit Test (Vitest)**: **114/114 SUPERATI (100%)**
+- **Unit Test (Vitest)**: **204/204 SUPERATI (100%)** su 21 file di test
   - **106 test preesistenti**: auth, codice fiscale, segnalazioni, guardie DB, rate-limiter, email-transport, mime-validator, storage provider, pipeline IA, layout mappa, nav-links, media-placeholder.
-  - **8 test specifici del nuovo worker**: validazione parametri, rifiuto live DB errato, blocco destinatario non autorizzato, verifica modalità dry-run senza modifiche Outbox, invio controllato solo con `--send`.
+  - **8 test worker email**: validazione parametri, rifiuto live DB errato, blocco destinatario non autorizzato, verifica modalità dry-run senza modifiche Outbox, invio controllato solo con `--send`.
+  - **26 test IA locale**: Ollama adapter isolation (6 test), validazione classificazione civica (8 test), verifica coerenza visivo-testuale fail-closed (12 test).
+  - **12 test dossier**: CSV RFC 4180 con UTF-8 BOM, difesa Formula Injection, stampa multi-pagina, fail-closed 503 su DB down.
+  - **14 test upload e route handler (Fase 3)**: `caricaUploadTemporaneo` (validazione utente attivo/verificato, magic bytes, persistenza), rollback compensativo su errore DB, protezione orfani in `.orphaned_storage_keys.json`, garbage collection non distruttiva e endpoint `POST /api/uploads` (401, 403, 413, 400, 200).
 - **TLS Prisma strict su macOS**: **BLOCCATO**
-  - Il certificato inviato dal cluster MySQL Aiven omette l'estensione standard `X509v3 Extended Key Usage: serverAuth` (`1.3.6.1.5.5.7.3.1`).
-  - Su macOS, Apple Security Framework (`native-tls` via Rust/Prisma) applica la policy stringente di sistema e rifiuta la connessione con errore `errSecInvalidExtendedKeyUsage` (codice `-67609`), traducendosi in `Error opening a TLS connection: The certificate was not trusted.`
-  - Con client OpenSSL/Node.js nativo con `rejectUnauthorized: true`, la verifica CA e hostname ha pieno successo.
+  - **Ultimo errore sanitizzato riscontrato verso Aiven (`scripts/verify-aiven.ts`)**: `Can't reach database server at mysql-d1e002e-iisgalvanimi-6770.f.aivencloud.com:11582` (categoria `RETE_TCP`).
+  - **Vincolo TLS macOS con rete attiva**: Il certificato inviato dal cluster MySQL Aiven omette l'estensione standard `X509v3 Extended Key Usage: serverAuth` (`1.3.6.1.5.5.7.3.1`). Su macOS, Apple Security Framework (`native-tls` via Rust/Prisma) applica la policy stringente di sistema e rifiuta la connessione con errore `errSecInvalidExtendedKeyUsage` (codice `-67609`), traducendosi in `Error opening a TLS connection: The certificate was not trusted.`
+  - **Connessione OpenSSL/Node.js nativa**: Con client nativo con `rejectUnauthorized: true`, la verifica CA e hostname ha pieno successo.
+  - **Certificato Locale (`certs/ca.pem`)**: Il file `certs/ca.pem` è presente localmente ed è configurato in `.env.test` (`isAuthorizedTargetConfigured: true`). Tuttavia, l'origine e la validità effettiva rispetto al server live non sono dichiarate verificate per il solo fatto che il file esiste su disco; andranno convalidate con il ripristino della connettività verso il cluster.
 
 ---
 
@@ -84,7 +92,7 @@ Quando la connettività TLS strict al database sarà ripristinata:
 | Logout e invalidazione sessione | SUPERATO |
 | Reset password nel browser | NON ESEGUITO (scelta operatore) |
 | Reinvio verifica nel browser | NON ESEGUITO |
-| **Upload foto + invio segnalazione (Fase 3)** | **NON ESEGUITO -- prima attivita' prossima sessione** |
+| **Upload foto + invio segnalazione (Fase 3)** | **NON ESEGUITO nel browser (in attesa di DB live; logica di dominio e route handler coperte offline da 14 unit test)** |
 
 ---
 
@@ -145,3 +153,38 @@ npm run start:test
 | `prisma/migrations/20261006000000_init_mysql/` | Migrazione MySQL (UTF-8 no BOM) |
 | `scripts/verify-aiven.ts` | Diagnostica connessione Aiven read-only |
 | `docs/ADR-005.md` | Decisione architetturale vincoli media |
+
+---
+
+## Riferimenti Progettuali Fondamentali
+
+- **Schema ER Concettuale (PNG)**: [`docs/progetto/schema_er_concettuale.png`](file:///Users/john/Desktop/la-nostra-citta-webapp/docs/progetto/schema_er_concettuale.png) e versione estesa [`docs/progetto/03B_ER_estensione_tecnica.png`](file:///Users/john/Desktop/la-nostra-citta-webapp/docs/progetto/03B_ER_estensione_tecnica.png)
+- **Modello Logico Relazionale**: [`docs/progetto/04_MODELLO_LOGICO.md`](file:///Users/john/Desktop/la-nostra-citta-webapp/docs/progetto/04_MODELLO_LOGICO.md)
+- **Checklist di Collaudo Finale Operatore**: [`docs/CHECKLIST_COLLAUDO_FINALE.md`](file:///Users/john/Desktop/la-nostra-citta-webapp/docs/CHECKLIST_COLLAUDO_FINALE.md)
+
+---
+
+## Distinzione Operativa: Prove Svolte vs Prove da Eseguire in Laboratorio
+
+### 1. Prove Già Svolte con Successo (Verificate)
+- **Unit Testing Offline**: 204/204 test superati (100%) su 21 file Vitest (inclusi 14 test Fase 3 upload e 26 test adapter/contratti IA Ollama).
+- **Controllo Statico e Qualità**: 0 errori TypeScript (`tsc --noEmit`), 0 errori e 0 warning ESLint (`npm run lint`).
+- **Build di Produzione**: 19 route Next.js App Router (Turbopack) compilate con esito positivo (`npm run build`).
+- **Integrazione IA Locale (RF08)**: inferenza reale con `qwen3-vl:2b-instruct` (testo lampione -> categoria «luce») e validazione catalogo chiuso.
+- **Parser EXIF (RF09)**: parser reale nativo locale (`NativeExifMetadataAdapter`), estrazione segmenti binari JPEG offline verificata.
+- **SMTP Diagnostico**: invio singolo verso casella concordata accettato da Gmail SMTP e recapito reale in casella confermato dall'operatore.
+- **Riscontro Storico Database (Aiven live)**: 45 test di integrazione DB superati (T05-T14) e 12/12 step E2E Auth superati su `la_nostra_citta_test`.
+
+### 2. Prove Ancora da Eseguire in Laboratorio
+- **Risoluzione TLS strict / Connettività DB**:
+  - Verifica Percorso A (richiesta estensione `serverAuth` al supporto Aiven) o Percorso B (esecuzione applicazione in container/ambiente Linux con stack OpenSSL).
+- **Flusso Completo di Verifica Email Reale**:
+  - Registrazione via app di collaudo (`http://localhost:3001`), generazione token Outbox su `la_nostra_citta_test`, esecuzione controllata con `npm run worker:email:test -- --job-id <ID> --send`, verifica link `/verify?token=...` via form POST e login successivo.
+- **Collaudo Browser Manuale Flusso Upload Foto (Fase 3)**:
+  - Avvio server `npm run start:test` su porta 3001, upload file reale < 10 MiB, verifica record `UploadTemporaneo` (CONSUMATO) e `Media` (READY) su DB e persistenza file in `.private_storage/`.
+- **Collaudi Browser Aggiuntivi**:
+  - Reinvio verifica e reset password tramite interfaccia web.
+- **Collaudo Visivo Ollama (RF10 con Modello Live)**:
+  - Verifica della coerenza visivo-testuale con modello live su immagine reale/sintetica (rinviato su istruzione operatore).
+- **Resa Cartacea del Dossier**:
+  - Stampa fisica su carta o esportazione PDF da anteprima di stampa della rotta `/dossier`.

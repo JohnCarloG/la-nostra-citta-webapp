@@ -19,7 +19,8 @@
     "smtp:check": "tsx scripts/smtp-check.ts",
     "worker:email": "tsx scripts/email-worker.ts",
     "worker:email:test": "tsx scripts/email-worker-test.ts",
-    "diagnose:outbox": "tsx scripts/diagnose-outbox.ts"
+    "diagnose:outbox": "tsx scripts/diagnose-outbox.ts",
+    "check:ollama": "tsx scripts/check-ollama.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

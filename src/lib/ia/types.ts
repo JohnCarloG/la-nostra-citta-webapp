@@ -67,6 +67,7 @@ export interface CoherenceInput {
   text: string;
   media_id: string;
   media_type: 'IMMAGINE' | 'VIDEO';
+  mime_type?: string;
   private_image_or_frames: Buffer | string;
 }
 

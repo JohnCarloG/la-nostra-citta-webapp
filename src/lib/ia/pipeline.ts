@@ -10,6 +10,7 @@ import {
   AllowedCategory
 } from './types';
 import { createMockPipelineAdapters } from './mock-adapters';
+import { ollamaAdapters } from './ollama';
 import { createRealPipelineAdapters } from './real-adapters';
 import {
   validateModerationOutput,
@@ -53,18 +54,29 @@ export async function eseguiAnalisiSegnalazione(
   segnalazioneId: string,
   revisione: number,
   customAdapters?: Partial<PipelineAdapters>,
-  options?: { timeoutMs?: number; adapterMode?: 'real' | 'mock' }
+  options?: { timeoutMs?: number; adapterMode?: 'real' | 'mock' | 'ollama'; allowSimulatedApproval?: boolean }
 ): Promise<PipelineExecutionResult> {
-  const isRealMode = options?.adapterMode === 'real' || process.env.AI_ADAPTER_MODE === 'real';
+  const mode = options?.adapterMode ?? process.env.AI_ADAPTER_MODE ?? 'mock';
+  if (!['real', 'mock', 'ollama'].includes(mode)) throw new Error('Modalità IA non valida');
+  const local = mode === 'ollama';
+  const isRealMode = local || mode === 'real';
   const baseAdapters: PipelineAdapters = isRealMode
     ? createRealPipelineAdapters()
     : createMockPipelineAdapters();
 
   const adapters: PipelineAdapters = {
     ...baseAdapters,
+    ...(local ? {
+      ...ollamaAdapters(),
+      // RF07 is separate: no external calls and no simulated approval in local mode.
+      moderation: { name: 'human-review', isSimulated: false, async moderate() {
+        return { verdict: 'REVIEW' as const, reasons: ['Moderazione affidata al comitato'],
+          model_version: 'no-model', policy_version: 'human-review-v1' };
+      } }
+    } : {}),
     ...customAdapters
   };
-  const timeoutMs = options?.timeoutMs ?? 5000;
+  const timeoutMs = options?.timeoutMs ?? (local ? 90000 : 5000);
 
   // ==========================================
   // FASE A: Lettura dati preliminare (No Lock)
@@ -162,40 +174,48 @@ export async function eseguiAnalisiSegnalazione(
     let coherenceOutput: CoherenceOutput | undefined;
     let coherenceError: string | undefined;
 
-    // Recupero buffer dal private storage se disponibile
+    // Recupero buffer dal private storage autorizzato
     let fileBuffer: Buffer | undefined;
+    let storageReadError: string | undefined;
     try {
       fileBuffer = await storage.getObject(m.storage_key);
-    } catch {
-      // Buffer non disponibile o storage mock
+    } catch (err: unknown) {
+      storageReadError = err instanceof Error ? err.message : 'Impossibile accedere al media nel private storage autorizzato';
     }
 
-    // Estrazione EXIF
-    try {
-      const rawExif = await adapters.metadata.extract({
-        media_id: m.id,
-        private_object: {
-          buffer: fileBuffer,
-          mime: m.mime
-        }
-      }, { timeoutMs });
-      exifOutput = validateMetadataOutput(rawExif);
-    } catch (err: unknown) {
-      exifError = err instanceof Error ? err.message : 'Errore estrazione EXIF';
-    }
+    // Se in modalità reale il file del media privato non è accessibile, registra l'errore per il comitato
+    if (isRealMode && !fileBuffer) {
+      exifError = `Accesso storage privato fallito: ${storageReadError || 'File non trovato'}`;
+      coherenceError = `Accesso storage privato fallito: ${storageReadError || 'File non trovato'}`;
+    } else {
+      // Estrazione EXIF
+      try {
+        const rawExif = await adapters.metadata.extract({
+          media_id: m.id,
+          private_object: {
+            buffer: fileBuffer,
+            mime: m.mime
+          }
+        }, { timeoutMs });
+        exifOutput = validateMetadataOutput(rawExif);
+      } catch (err: unknown) {
+        exifError = err instanceof Error ? err.message : 'Errore estrazione EXIF';
+      }
 
-    // Coerenza
-    const mediaTypeNorm: 'VIDEO' | 'IMMAGINE' = m.tipo === 'VIDEO' ? 'VIDEO' : 'IMMAGINE';
-    try {
-      const rawCoherence = await adapters.coherence.check({
-        text: segnalazione.descrizione,
-        media_id: m.id,
-        media_type: mediaTypeNorm,
-        private_image_or_frames: fileBuffer || m.storage_key
-      }, { timeoutMs });
-      coherenceOutput = validateCoherenceOutput(rawCoherence);
-    } catch (err: unknown) {
-      coherenceError = err instanceof Error ? err.message : 'Errore verifica coerenza visiva';
+      // Coerenza visivo-testuale (RF10)
+      const mediaTypeNorm: 'VIDEO' | 'IMMAGINE' = m.tipo === 'VIDEO' ? 'VIDEO' : 'IMMAGINE';
+      try {
+        const rawCoherence = await adapters.coherence.check({
+          text: segnalazione.descrizione,
+          media_id: m.id,
+          media_type: mediaTypeNorm,
+          mime_type: m.mime,
+          private_image_or_frames: fileBuffer || m.storage_key
+        }, { timeoutMs });
+        coherenceOutput = validateCoherenceOutput(rawCoherence);
+      } catch (err: unknown) {
+        coherenceError = err instanceof Error ? err.message : 'Errore verifica coerenza visiva';
+      }
     }
 
     mediaResults.push({
@@ -299,6 +319,71 @@ export async function eseguiAnalisiSegnalazione(
             stato_esecuzione: 'OBSOLETE'
           }
         });
+      }
+
+      // Salvataggio stato OBSOLETE anche per i media (EXIF e COERENZA)
+      for (const mr of mediaResults) {
+        if (mr.exifOutput) {
+          await tx.analisiIa.upsert({
+            where: {
+              chiave_idempotenza: {
+                segnalazione_id: segnalazioneId,
+                revisione,
+                modulo: 'EXIF',
+                input_hash: mr.exifHash,
+                versione_modello: mr.exifOutput.parser_version,
+                versione_policy: 'policy-v1.0'
+              }
+            },
+            create: {
+              segnalazione_id: segnalazioneId,
+              media_id: mr.mediaId,
+              revisione,
+              modulo: 'EXIF',
+              versione_modello: mr.exifOutput.parser_version,
+              versione_policy: 'policy-v1.0',
+              input_hash: mr.exifHash,
+              stato_esecuzione: 'OBSOLETE',
+              esito: 'OBSOLETE',
+              dettagli_json: JSON.stringify({ note: 'Revisione superata' }),
+              completata_il: new Date()
+            },
+            update: {
+              stato_esecuzione: 'OBSOLETE'
+            }
+          });
+        }
+
+        if (mr.coherenceOutput) {
+          await tx.analisiIa.upsert({
+            where: {
+              chiave_idempotenza: {
+                segnalazione_id: segnalazioneId,
+                revisione,
+                modulo: 'COERENZA',
+                input_hash: mr.coherenceHash,
+                versione_modello: mr.coherenceOutput.model_version,
+                versione_policy: 'policy-v1.0'
+              }
+            },
+            create: {
+              segnalazione_id: segnalazioneId,
+              media_id: mr.mediaId,
+              revisione,
+              modulo: 'COERENZA',
+              versione_modello: mr.coherenceOutput.model_version,
+              versione_policy: 'policy-v1.0',
+              input_hash: mr.coherenceHash,
+              stato_esecuzione: 'OBSOLETE',
+              esito: 'OBSOLETE',
+              dettagli_json: JSON.stringify({ note: 'Revisione superata' }),
+              completata_il: new Date()
+            },
+            update: {
+              stato_esecuzione: 'OBSOLETE'
+            }
+          });
+        }
       }
 
       return {
@@ -496,6 +581,36 @@ export async function eseguiAnalisiSegnalazione(
             completata_il: new Date()
           }
         });
+      } else if (mr.exifError) {
+        await tx.analisiIa.upsert({
+          where: {
+            chiave_idempotenza: {
+              segnalazione_id: segnalazioneId,
+              revisione,
+              modulo: 'EXIF',
+              input_hash: mr.exifHash,
+              versione_modello: 'unknown',
+              versione_policy: 'policy-v1.0'
+            }
+          },
+          create: {
+            segnalazione_id: segnalazioneId,
+            media_id: mr.mediaId,
+            revisione,
+            modulo: 'EXIF',
+            versione_modello: 'unknown',
+            versione_policy: 'policy-v1.0',
+            input_hash: mr.exifHash,
+            stato_esecuzione: 'FAILED',
+            esito: 'FAILED',
+            dettagli_json: JSON.stringify({ error: mr.exifError }),
+            completata_il: new Date()
+          },
+          update: {
+            stato_esecuzione: 'FAILED',
+            dettagli_json: JSON.stringify({ error: mr.exifError })
+          }
+        });
       }
 
       if (mr.coherenceOutput) {
@@ -530,6 +645,36 @@ export async function eseguiAnalisiSegnalazione(
             punteggio: mr.coherenceOutput.optional_score,
             dettagli_json: JSON.stringify({ reasons: mr.coherenceOutput.reasons }),
             completata_il: new Date()
+          }
+        });
+      } else if (mr.coherenceError) {
+        await tx.analisiIa.upsert({
+          where: {
+            chiave_idempotenza: {
+              segnalazione_id: segnalazioneId,
+              revisione,
+              modulo: 'COERENZA',
+              input_hash: mr.coherenceHash,
+              versione_modello: 'unknown',
+              versione_policy: 'policy-v1.0'
+            }
+          },
+          create: {
+            segnalazione_id: segnalazioneId,
+            media_id: mr.mediaId,
+            revisione,
+            modulo: 'COERENZA',
+            versione_modello: 'unknown',
+            versione_policy: 'policy-v1.0',
+            input_hash: mr.coherenceHash,
+            stato_esecuzione: 'FAILED',
+            esito: 'FAILED',
+            dettagli_json: JSON.stringify({ error: mr.coherenceError }),
+            completata_il: new Date()
+          },
+          update: {
+            stato_esecuzione: 'FAILED',
+            dettagli_json: JSON.stringify({ error: mr.coherenceError })
           }
         });
       }
@@ -572,10 +717,19 @@ export async function eseguiAnalisiSegnalazione(
         const failReasons = mediaResults
           .map(mr => mr.coherenceError || mr.coherenceOutput?.reasons?.join('; ') || 'Coerenza non verificata')
           .join(' | ');
-        motivazione = `Richiesta revisione comitato: coerenza media non garantita o formato video non supportato (${failReasons})`;
+        motivazione = `Richiesta revisione comitato: coerenza media non garantita o formato non supportato (${failReasons})`;
       } else {
-        targetStato = 'APPROVATA';
-        motivazione = 'Approvazione automatica: testo sicuro e coerenza dei media verificata';
+        // Regola RF10: Nessuna pubblicazione automatica fondata su risultati simulati!
+        // In modalità reale (o se allowSimulatedApproval è disattivato), i moduli simulati (isSimulated = true)
+        // non possono autorizzare la pubblicazione automatica in APPROVATA, ma instradano al comitato (IN_REVISIONE).
+        const isSimulationUsed = adapters.moderation.isSimulated || adapters.coherence.isSimulated;
+        if ((isRealMode && isSimulationUsed) || options?.allowSimulatedApproval === false) {
+          targetStato = 'IN_REVISIONE';
+          motivazione = 'Richiesta revisione comitato: pubblicazione automatica non consentita con moduli di moderazione o coerenza visiva simulati';
+        } else {
+          targetStato = 'APPROVATA';
+          motivazione = 'Approvazione automatica: testo sicuro e coerenza dei media verificata';
+        }
       }
     }
 

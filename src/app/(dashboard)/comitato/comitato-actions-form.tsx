@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import React, { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   moderaSegnalazioneAction,
   avanzaStatoSegnalazioneAction,
   aggiornaCategorieAction
 } from '@/actions/segnalazioni';
+import ComitatoMediaGallery, { ComitatoMediaItem } from '@/components/comitato/comitato-media-gallery';
 
 export interface ComitatoActionsFormProps {
   segnalazioneId: string;
@@ -15,7 +16,12 @@ export interface ComitatoActionsFormProps {
   revisione: number;
   categorieDisponibili?: Array<{ id: string; nome: string }>;
   categorieAssegnateIds?: string[];
+  media?: ComitatoMediaItem[];
+  segnalazioneDescrizione?: string;
   mode?: 'all' | 'avanzamento-only' | 'moderazione-only';
+  showHeader?: boolean;
+  showMedia?: boolean;
+  onCancel?: () => void;
 }
 
 /**
@@ -83,13 +89,13 @@ function getAllowedNextStates(
   }
   if (statoAvanzamento === 'RICEVUTA') {
     return [
-      { value: 'PRESA_IN_CARICO', label: 'Prendi in carico per istruttoria comitato' },
+      { value: 'PRESA_IN_CARICO', label: 'Prendi in carico' },
       { value: 'RITIRATA', label: 'Ritira la segnalazione' },
     ];
   }
   if (statoAvanzamento === 'PRESA_IN_CARICO') {
     return [
-      { value: 'INVIATA_AI_CANDIDATI', label: 'Registra avvenuta trasmissione ai candidati' },
+      { value: 'INVIATA_AI_CANDIDATI', label: 'Registra trasmissione ai candidati' },
       { value: 'RITIRATA', label: 'Ritira la segnalazione' },
     ];
   }
@@ -101,6 +107,24 @@ function getAllowedNextStates(
   return [];
 }
 
+function StatoBadgeMini({ stato, tipo }: { stato: string; tipo: 'mod' | 'avanz' }) {
+  const modMap: Record<string, { cls: string; label: string }> = {
+    PENDENTE:     { cls: 'badge badge-mod-pendente',  label: 'In attesa' },
+    IN_REVISIONE: { cls: 'badge badge-mod-revisione', label: 'In revisione' },
+    APPROVATA:    { cls: 'badge badge-mod-approvata', label: 'Approvata' },
+    RIFIUTATA:    { cls: 'badge badge-mod-rifiutata', label: 'Rifiutata' },
+  };
+  const avanzMap: Record<string, { cls: string; label: string }> = {
+    RICEVUTA:             { cls: 'badge badge-ricevuta',  label: 'Ricevuta' },
+    PRESA_IN_CARICO:      { cls: 'badge badge-carico',    label: 'In carico' },
+    INVIATA_AI_CANDIDATI: { cls: 'badge badge-candidati', label: 'Ai candidati' },
+    RITIRATA:             { cls: 'badge badge-ritirata',  label: 'Ritirata' },
+  };
+  const map = tipo === 'mod' ? modMap : avanzMap;
+  const item = map[stato] ?? { cls: 'badge badge-categoria', label: stato.replace(/_/g, ' ') };
+  return <span className={item.cls}>{item.label}</span>;
+}
+
 export default function ComitatoActionsForm({
   segnalazioneId,
   statoModerazione,
@@ -108,7 +132,12 @@ export default function ComitatoActionsForm({
   revisione,
   categorieDisponibili = [],
   categorieAssegnateIds: initialCatIds = [],
-  mode = 'all'
+  media = [],
+  segnalazioneDescrizione = 'segnalazione',
+  mode = 'all',
+  showHeader = true,
+  showMedia = true,
+  onCancel
 }: ComitatoActionsFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -116,8 +145,9 @@ export default function ComitatoActionsForm({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Stato form moderazione
+  const isPendenteORevisione = statoModerazione === 'PENDENTE' || statoModerazione === 'IN_REVISIONE';
   const [modDecision, setModDecision] = useState<'APPROVATA' | 'RIFIUTATA' | 'IN_REVISIONE'>(
-    statoModerazione === 'PENDENTE' || statoModerazione === 'IN_REVISIONE' ? 'APPROVATA' : 'IN_REVISIONE'
+    isPendenteORevisione ? 'APPROVATA' : 'IN_REVISIONE'
   );
   const [modMotivazione, setModMotivazione] = useState('');
 
@@ -164,6 +194,7 @@ export default function ComitatoActionsForm({
         setModMotivazione('');
         router.refresh();
       } else {
+        // La motivazione inserita viene preservata in modMotivazione
         setErrorMsg(res.error || 'Errore durante la registrazione della decisione di moderazione.');
       }
     });
@@ -193,6 +224,7 @@ export default function ComitatoActionsForm({
         setAvMotivazione('');
         router.refresh();
       } else {
+        // La motivazione inserita viene preservata in avMotivazione
         setErrorMsg(res.error || 'Errore durante l\'aggiornamento dell\'avanzamento.');
       }
     });
@@ -230,13 +262,47 @@ export default function ComitatoActionsForm({
     });
   };
 
-  const showModerazione = mode === 'all' || mode === 'moderazione-only';
-  const showAvanzamento = mode === 'all' || mode === 'avanzamento-only';
-  const showCategorie = mode === 'all' && categorieDisponibili.length > 0;
+  const isTerminalState = statoAvanzamento === 'RITIRATA' || (statoModerazione === 'RIFIUTATA' && mode !== 'moderazione-only');
+  const showModerazione = (mode === 'all' || mode === 'moderazione-only') && isPendenteORevisione;
+  const showAvanzamento = (mode === 'all' || mode === 'avanzamento-only') && statoModerazione === 'APPROVATA' && !isTerminalState;
 
   return (
-    <div className="flex flex-col gap-4 text-xs">
-      {/* Messaggi di feedback */}
+    <div className="flex flex-col gap-4 text-xs w-full" data-testid="comitato-actions-form">
+      {/* ── 1. STATO ATTUALE (mostrato se richiesto) ── */}
+      {showHeader && (
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded bg-[var(--bg-subtle)] border border-[var(--border-light)]">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-[var(--text-secondary)]">Stato attuale:</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[0.6875rem] text-[var(--text-muted)]">Moderazione:</span>
+              <StatoBadgeMini stato={statoModerazione} tipo="mod" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[0.6875rem] text-[var(--text-muted)]">Iter:</span>
+              <StatoBadgeMini stato={statoAvanzamento} tipo="avanz" />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 font-mono text-[0.6875rem] text-[var(--text-muted)]">
+            <span>Rev. {revisione}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── 2. ALLEGATI DI PROVA (mostrati se richiesto) ── */}
+      {showMedia && media && media.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="font-bold text-xs text-[var(--text-primary)]">
+            Allegati e prove documentali
+          </h3>
+          <ComitatoMediaGallery
+            media={media}
+            segnalazioneDescrizione={segnalazioneDescrizione}
+          />
+        </div>
+      )}
+
+      {/* Messaggi di feedback ed errore (visibili accanto al form) */}
       {errorMsg && (
         <div className="alert alert-error" role="alert">
           <p>{errorMsg}</p>
@@ -249,188 +315,286 @@ export default function ComitatoActionsForm({
         </div>
       )}
 
-      <div className={`grid grid-cols-1 ${mode === 'all' ? 'lg:grid-cols-3' : ''} gap-4`}>
-        {/* Blocco 1: Moderazione di conformità */}
+      {/* ── 3. AZIONE DISPONIBILE, 4. MOTIVAZIONE, 5. PULSANTE DI CONFERMA ── */}
+      <div className="flex flex-col gap-3">
+        {/* CASO A: MODERAZIONE DI AMMISSIONE (SE PENDENTE O IN REVISIONE) */}
         {showModerazione && (
-          <div className="panel-subtle p-3 flex flex-col justify-between">
-            <div>
-              <h3 className="font-bold text-[var(--text-primary)] text-xs mb-1">
-                1. Moderazione di ammissione
-              </h3>
-              <p className="text-[0.6875rem] text-[var(--text-muted)] mb-3">
-                Stato attuale: <strong>{statoModerazione}</strong> &bull; Rev. {revisione}
-              </p>
-
-              <form onSubmit={handleModera} className="flex flex-col gap-2.5">
-                <div>
-                  <label htmlFor={`mod-dec-${segnalazioneId}`} className="form-label text-[0.6875rem]">
-                    Decisione comitato
-                  </label>
-                  <select
-                    id={`mod-dec-${segnalazioneId}`}
-                    value={modDecision}
-                    onChange={e => setModDecision(e.target.value as 'APPROVATA' | 'IN_REVISIONE' | 'RIFIUTATA')}
-                    className="form-input text-xs py-1"
-                  >
-                    <option value="APPROVATA">APPROVA (Ammessa e pubblicabile)</option>
-                    <option value="IN_REVISIONE">IN REVISIONE (Approfondimento comitato)</option>
-                    <option value="RIFIUTATA">RIFIUTA (Non conforme alle linee guida)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor={`mod-mot-${segnalazioneId}`} className="form-label text-[0.6875rem]">
-                    Motivazione della decisione (tracciata in audit)
-                  </label>
-                  <textarea
-                    id={`mod-mot-${segnalazioneId}`}
-                    rows={2}
-                    required
-                    placeholder="Indica la motivazione della delibera..."
-                    value={modMotivazione}
-                    onChange={e => setModMotivazione(e.target.value)}
-                    className="form-input text-xs py-1"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="btn btn-primary btn-sm mt-1"
+          <form onSubmit={handleModera} className="scroll-mt-28 flex flex-col gap-3 p-3.5 bg-white rounded border border-[var(--border-medium)] shadow-sm">
+            {/* Selezione esplicita della decisione */}
+            <div id={`decision-box-${segnalazioneId}`} className="scroll-mt-28 flex flex-col gap-1.5">
+              <span className="font-bold text-xs text-[var(--text-primary)]">Decisione:</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <label
+                  className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors ${
+                    modDecision === 'APPROVATA'
+                      ? 'border-[var(--success-border)] bg-[var(--success-bg)] text-[var(--success-text)] font-bold'
+                      : 'border-[var(--border-medium)] bg-white text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'
+                  }`}
                 >
-                  {isPending ? 'Salvataggio…' : 'Applica decisione'}
-                </button>
-              </form>
+                  <input
+                    type="radio"
+                    id={`mod-dec-${segnalazioneId}-APPROVATA`}
+                    name={`mod-dec-${segnalazioneId}`}
+                    value="APPROVATA"
+                    checked={modDecision === 'APPROVATA'}
+                    onChange={() => setModDecision('APPROVATA')}
+                    className="accent-[var(--success-text)]"
+                  />
+                  <span>Approva</span>
+                </label>
+
+                <label
+                  className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors ${
+                    modDecision === 'RIFIUTATA'
+                      ? 'border-[var(--error-border)] bg-[var(--error-bg)] text-[var(--error-text)] font-bold'
+                      : 'border-[var(--border-medium)] bg-white text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name={`mod-dec-${segnalazioneId}`}
+                    value="RIFIUTATA"
+                    checked={modDecision === 'RIFIUTATA'}
+                    onChange={() => setModDecision('RIFIUTATA')}
+                    className="accent-[var(--error-text)]"
+                  />
+                  <span>Rifiuta</span>
+                </label>
+
+                <label
+                  className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors ${
+                    modDecision === 'IN_REVISIONE'
+                      ? 'border-[var(--warning-border)] bg-[var(--warning-bg)] text-[var(--warning-text)] font-bold'
+                      : 'border-[var(--border-medium)] bg-white text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name={`mod-dec-${segnalazioneId}`}
+                    value="IN_REVISIONE"
+                    checked={modDecision === 'IN_REVISIONE'}
+                    onChange={() => setModDecision('IN_REVISIONE')}
+                    className="accent-[var(--warning-text)]"
+                  />
+                  <span>In revisione</span>
+                </label>
+              </div>
             </div>
-          </div>
-        )}
 
-        {/* Blocco 2: Avanzamento iter */}
-        {showAvanzamento && (
-          <div className="panel-subtle p-3 flex flex-col justify-between">
-            <div>
-              <h3 className="font-bold text-[var(--text-primary)] text-xs mb-1">
-                2. Avanzamento iter territoriale
-              </h3>
-              <p className="text-[0.6875rem] text-[var(--text-muted)] mb-3">
-                Stato attuale: <strong>{statoAvanzamento}</strong> (Moderazione: {statoModerazione})
-              </p>
+            {/* Motivazione obbligatoria con suggerimento neutro */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor={`mod-mot-${segnalazioneId}`} className="form-label text-[0.6875rem]">
+                Motivazione (obbligatoria)
+              </label>
+              <textarea
+                id={`mod-mot-${segnalazioneId}`}
+                rows={2}
+                required
+                placeholder="Spiega il motivo della decisione"
+                value={modMotivazione}
+                onChange={e => setModMotivazione(e.target.value)}
+                className="form-input text-xs py-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--blue-primary)]"
+              />
+            </div>
 
-              {statoModerazione !== 'APPROVATA' ? (
-                <div className="p-2.5 bg-[var(--bg-subtle)] border border-[var(--border-medium)] rounded text-[0.6875rem] text-[var(--text-secondary)]">
-                  <p className="font-semibold text-[var(--text-primary)] mb-1">Avanzamento non consentito</p>
-                  <p>
-                    L&rsquo;iter territoriale (&ldquo;In carico al comitato&rdquo; o &ldquo;Trasmessa ai candidati&rdquo;) 
-                    può essere avviato esclusivamente dopo che la segnalazione è stata deliberata con esito <strong>APPROVATA</strong>.
-                  </p>
-                </div>
-              ) : allowedNextStates.length === 0 ? (
-                <div className="p-2.5 bg-[var(--bg-subtle)] border border-[var(--border-medium)] rounded text-[0.6875rem] text-[var(--text-secondary)]">
-                  <p className="font-semibold text-[var(--text-primary)] mb-1">Iter completato o terminale</p>
-                  <p>
-                    {statoAvanzamento === 'RITIRATA'
-                      ? 'Segnalazione ritirata: nessuna ulteriore transizione possibile.'
-                      : 'La segnalazione è già stata trasmessa ai candidati nel dossier civico.'}
-                  </p>
-                </div>
-              ) : (
-                <form onSubmit={handleAvanza} className="flex flex-col gap-2.5">
-                  <div>
-                    <label htmlFor={`av-dec-${segnalazioneId}`} className="form-label text-[0.6875rem]">
-                      Azione di avanzamento
-                    </label>
-                    <select
-                      id={`av-dec-${segnalazioneId}`}
-                      value={avStato}
-                      onChange={e => setSelectedAvStato(e.target.value as 'PRESA_IN_CARICO' | 'INVIATA_AI_CANDIDATI' | 'RITIRATA')}
-                      className="form-input text-xs py-1"
-                    >
-                      {allowedNextStates.map(opt => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {avStato === 'INVIATA_AI_CANDIDATI' && (
-                    <div className="p-2 bg-amber-50 border border-amber-200 rounded text-[0.6875rem] text-amber-800">
-                      <strong>Nota operativa sulla trasmissione:</strong> Questa azione registra formalmente nel registro storico il passaggio di stato a &ldquo;Trasmessa ai candidati&rdquo;. Il sistema non esegue l&rsquo;invio di email: la trasmissione materiale del dossier alle liste e ai candidati avviene mediante esportazione del Dossier Candidati (RF13).
-                    </div>
-                  )}
-
-                  <div>
-                    <label htmlFor={`av-mot-${segnalazioneId}`} className="form-label text-[0.6875rem]">
-                      Note e motivazione del passaggio (obbligatoria)
-                    </label>
-                    <textarea
-                      id={`av-mot-${segnalazioneId}`}
-                      rows={2}
-                      required
-                      placeholder={
-                        avStato === 'PRESA_IN_CARICO'
-                          ? 'Es. Aperta istruttoria tecnica per verifica con gli uffici comunali...'
-                          : avStato === 'INVIATA_AI_CANDIDATI'
-                          ? 'Es. Segnalazione inclusa nel dossier trasmesso ai candidati sindaci per il dibattito...'
-                          : 'Indica la motivazione...'
-                      }
-                      value={avMotivazione}
-                      onChange={e => setAvMotivazione(e.target.value)}
-                      className="form-input text-xs py-1"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isPending}
-                    className="btn btn-secondary btn-sm mt-1"
-                  >
-                    {isPending ? 'Salvataggio…' : 'Registra avanzamento'}
-                  </button>
-                </form>
+            {/* Pulsante di conferma primario con controllo secondario Chiudi opzionale */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[var(--border-light)]">
+              <button
+                type="submit"
+                disabled={isPending}
+                className={`btn btn-sm font-semibold flex items-center gap-1.5 shadow-sm ${
+                  modDecision === 'APPROVATA'
+                    ? 'btn-primary'
+                    : modDecision === 'RIFIUTATA'
+                    ? 'btn-danger'
+                    : 'btn-secondary'
+                }`}
+              >
+                <span>
+                  {isPending
+                    ? 'Salvataggio in corso…'
+                    : modDecision === 'APPROVATA'
+                    ? 'Approva segnalazione'
+                    : modDecision === 'RIFIUTATA'
+                    ? 'Rifiuta segnalazione'
+                    : 'Conferma stato in revisione'}
+                </span>
+              </button>
+              {onCancel && (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className="btn btn-secondary btn-sm font-normal"
+                >
+                  Chiudi
+                </button>
               )}
             </div>
-          </div>
+          </form>
         )}
 
-        {/* Blocco 3: Conferma categorie */}
-        {showCategorie && (
-          <div className="panel-subtle p-3 flex flex-col justify-between">
+        {/* CASO B: AVANZAMENTO ITER FORMALE (SE GIÀ APPROVATA) */}
+        {showAvanzamento && (
+          <form onSubmit={handleAvanza} className="flex flex-col gap-3 p-3.5 bg-white rounded border border-[var(--border-medium)] shadow-sm">
             <div>
-              <h3 className="font-bold text-[var(--text-primary)] text-xs mb-1">
-                3. Categorie confermate
+              <h3 className="font-bold text-xs text-[var(--text-primary)] mb-0.5">
+                Azione disponibile: Avanzamento iter territoriale
               </h3>
-              <p className="text-[0.6875rem] text-[var(--text-muted)] mb-3">
-                Ambiti territoriali associati dal comitato
+              <p className="text-[0.6875rem] text-[var(--text-muted)]">
+                {statoAvanzamento === 'RICEVUTA' && 'La proposta è stata approvata. L\'operatore può ora prenderla in carico per l\'istruttoria del comitato.'}
+                {statoAvanzamento === 'PRESA_IN_CARICO' && 'La proposta è in carico al comitato. È possibile registrare l\'avvenuta trasmissione formale ai candidati.'}
+                {statoAvanzamento === 'INVIATA_AI_CANDIDATI' && 'La proposta è già stata registrata come trasmessa ai candidati.'}
               </p>
-
-              <form onSubmit={handleSalvaCategorie} className="flex flex-col gap-2">
-                <div className="max-h-28 overflow-y-auto flex flex-col gap-1 border border-[var(--border-medium)] rounded-[var(--radius-xs)] p-2 bg-white">
-                  {categorieDisponibili.map(cat => (
-                    <label key={cat.id} className="flex items-center gap-2 cursor-pointer text-[0.6875rem]">
-                      <input
-                        type="checkbox"
-                        checked={selectedCats.includes(cat.id)}
-                        onChange={() => handleToggleCat(cat.id)}
-                        className="rounded"
-                      />
-                      <span className="truncate">{cat.nome}</span>
-                    </label>
-                  ))}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="btn btn-secondary btn-sm mt-1"
-                >
-                  {isPending ? 'Salvataggio…' : 'Conferma categorie'}
-                </button>
-              </form>
             </div>
+
+            {/* Selezione esplicita del passaggio di stato */}
+            <div className="flex flex-col gap-1.5">
+              <span className="form-label text-[0.6875rem]">Passaggio di stato:</span>
+              <div className="flex flex-col gap-1.5">
+                {allowedNextStates.map(opt => (
+                  <label
+                    key={opt.value}
+                    className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors ${
+                      avStato === opt.value
+                        ? 'border-[var(--blue-primary)] bg-[var(--blue-light)] text-[var(--blue-primary)] font-bold'
+                        : 'border-[var(--border-medium)] bg-white text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name={`av-opt-${segnalazioneId}`}
+                      value={opt.value}
+                      checked={avStato === opt.value}
+                      onChange={() => setSelectedAvStato(opt.value)}
+                      className="accent-[var(--blue-primary)]"
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Avviso esplicito per registrazione trasmissione ai candidati */}
+            {avStato === 'INVIATA_AI_CANDIDATI' && (
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded text-blue-900 text-[0.6875rem]">
+                Registra una trasmissione già avvenuta. Non viene inviata alcuna email.
+              </div>
+            )}
+
+            {/* Motivazione obbligatoria dell'avanzamento */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor={`av-mot-${segnalazioneId}`} className="form-label text-[0.6875rem]">
+                Note e motivazione del passaggio (obbligatoria)
+              </label>
+              <textarea
+                id={`av-mot-${segnalazioneId}`}
+                rows={2}
+                required
+                placeholder={
+                  avStato === 'PRESA_IN_CARICO'
+                    ? 'Es. Aperta istruttoria tecnica per verifica con gli uffici comunali...'
+                    : avStato === 'INVIATA_AI_CANDIDATI'
+                    ? 'Es. Proposta inclusa nel dossier ufficiale per il confronto tra liste e candidati...'
+                    : 'Indica la motivazione...'
+                }
+                value={avMotivazione}
+                onChange={e => setAvMotivazione(e.target.value)}
+                className="form-input text-xs py-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--blue-primary)]"
+              />
+            </div>
+
+            {/* Pulsante di conferma primario */}
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-[var(--border-light)]">
+              <button
+                type="submit"
+                disabled={isPending}
+                className={`btn btn-sm font-semibold flex items-center gap-1.5 ${
+                  avStato === 'RITIRATA' ? 'btn-danger' : 'btn-primary'
+                }`}
+              >
+                <span>
+                  {isPending
+                    ? 'Salvataggio in corso…'
+                    : avStato === 'PRESA_IN_CARICO'
+                    ? 'Prendi in carico'
+                    : avStato === 'INVIATA_AI_CANDIDATI'
+                    ? 'Registra trasmissione ai candidati'
+                    : 'Ritira segnalazione'}
+                </span>
+              </button>
+              <span className="text-[0.625rem] text-[var(--text-muted)]">
+                Aggiorna stato iter
+              </span>
+            </div>
+          </form>
+        )}
+
+        {/* CASO C: STATO TERMINALE O INIBITO */}
+        {isTerminalState && (
+          <div className="p-3 bg-[var(--bg-subtle)] border border-[var(--border-medium)] rounded text-[var(--text-muted)] flex flex-col gap-1">
+            <span className="font-semibold text-xs text-[var(--text-primary)]">
+              Stato terminale della segnalazione
+            </span>
+            <p className="text-[0.6875rem]">
+              Questa segnalazione si trova nello stato conclusivo ({statoAvanzamento === 'RITIRATA' ? 'Ritirata' : 'Rifiutata'}) e non consente ulteriori modifiche di stato.
+            </p>
           </div>
         )}
       </div>
+
+      {/* ── 6. SEZIONE SECONDARIA: MODIFICA CATEGORIE CONFERMATE ── */}
+      {categorieDisponibili.length > 0 && (
+        <details className="mt-2 border-t border-[var(--border-light)] pt-3">
+          <summary className="cursor-pointer font-semibold text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] py-1 flex items-center justify-between list-none">
+            <span>Modifica categorie</span>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="text-[var(--text-muted)]"
+              aria-hidden="true"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </summary>
+
+          <form onSubmit={handleSalvaCategorie} className="mt-3 flex flex-col gap-2 p-3 bg-white border border-[var(--border-light)] rounded">
+            <p className="text-[0.6875rem] text-[var(--text-muted)] mb-1">
+              Spunta le categorie pertinenti per l&rsquo;indicizzazione civica della proposta.
+            </p>
+
+            <div className="max-h-36 overflow-y-auto flex flex-col gap-1 border border-[var(--border-medium)] rounded-[var(--radius-xs)] p-2 bg-white">
+              {categorieDisponibili.map(cat => (
+                <label key={cat.id} className="flex items-center gap-2 cursor-pointer text-[0.6875rem]">
+                  <input
+                    type="checkbox"
+                    checked={selectedCats.includes(cat.id)}
+                    onChange={() => handleToggleCat(cat.id)}
+                    className="rounded accent-[var(--blue-primary)]"
+                  />
+                  <span className="truncate">{cat.nome}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="submit"
+                disabled={isPending}
+                className="btn btn-secondary btn-xs font-semibold"
+              >
+                {isPending ? 'Salvataggio…' : 'Conferma categorie'}
+              </button>
+              <span className="text-[0.625rem] text-[var(--text-muted)]">
+                {selectedCats.length} selezionate
+              </span>
+            </div>
+          </form>
+        </details>
+      )}
     </div>
   );
 }

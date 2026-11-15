@@ -10,7 +10,7 @@ export default async function Navbar() {
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[var(--border-light)] transition-all">
       <div className="page-container">
-        <div className="flex items-center justify-between h-16 md:h-18 gap-3">
+        <div className="flex items-center justify-between h-16 md:h-18 gap-2 sm:gap-3">
           
           {/* Identità del progetto con logo civico */}
           <Link href="/" className="flex items-center gap-2.5 text-decoration-none group shrink-0" aria-label="Home page La Nostra Città">
@@ -40,7 +40,7 @@ export default async function Navbar() {
           <DesktopNavLinks isComitato={isComitato} />
 
           {/* Accesso personale e pulsante "Segnala" */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             {user ? (
               <div className="flex items-center gap-2">
                 <Link

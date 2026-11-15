@@ -65,8 +65,8 @@ export default async function SegnalazioneDetailPage({ params }: PageProps) {
             <strong>{seg.stato_moderazione}</strong> e non è visibile al pubblico.
           </div>
           {isComitato && (
-            <Link href="/comitato" className="btn btn-secondary btn-sm ml-auto">
-              Vai alla coda di gestione &rarr;
+            <Link href="/comitato" className="btn btn-secondary btn-sm ml-auto font-semibold">
+              Vai alla coda di gestione
             </Link>
           )}
         </div>
@@ -97,9 +97,9 @@ export default async function SegnalazioneDetailPage({ params }: PageProps) {
             </div>
             <Link
               href="/comitato"
-              className="btn btn-secondary btn-xs self-start sm:self-center"
+              className="btn btn-secondary btn-xs self-start sm:self-center font-semibold"
             >
-              &larr; Registro comitato
+              Registro comitato
             </Link>
           </div>
 
@@ -110,6 +110,8 @@ export default async function SegnalazioneDetailPage({ params }: PageProps) {
             revisione={seg.revisione}
             categorieDisponibili={categorie.map(c => ({ id: c.id, nome: c.nome }))}
             categorieAssegnateIds={seg.categorie.map(c => c.categoria.id)}
+            media={seg.media}
+            segnalazioneDescrizione={seg.descrizione}
             mode="all"
           />
         </section>
@@ -239,7 +241,7 @@ export default async function SegnalazioneDetailPage({ params }: PageProps) {
               rel="noreferrer"
               className="text-[var(--blue-primary)] font-semibold hover:underline inline-flex items-center gap-1"
             >
-              Consulta mappa territoriale &rarr;
+              Consulta mappa territoriale
             </a>
           </div>
         </div>

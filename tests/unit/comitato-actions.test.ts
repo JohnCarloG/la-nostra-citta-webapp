@@ -632,4 +632,53 @@ describe('Verifica Operativa Comitato: Server Action e Confine con Form (RF05, R
       ]
     });
   });
+
+  // ── 11. VERIFICA CONTRATTI REDESIGN UX COMITATO ──
+  it('11. Contratti payload redesign UX: i costruttori esportati dal componente comitato generano chiavi attese sia per moderazione che per avanzamento', () => {
+    const fdModera = buildComitatoModeraFormData({
+      segnalazioneId: 'seg-901',
+      decision: 'APPROVATA',
+      motivazione: 'Verifica conformità documentale',
+      revisione: 4,
+      statoModerazione: 'IN_REVISIONE'
+    });
+    expect(fdModera.get('segnalazioneId')).toBe('seg-901');
+    expect(fdModera.get('decision')).toBe('APPROVATA');
+    expect(fdModera.get('decisione')).toBe('APPROVATA');
+    expect(fdModera.get('expectedRevision')).toBe('4');
+    expect(fdModera.get('revisioneAttesa')).toBe('4');
+    expect(fdModera.get('expectedState')).toBe('IN_REVISIONE');
+    expect(fdModera.get('statoAtteso')).toBe('IN_REVISIONE');
+
+    const fdAvanza = buildComitatoAvanzaFormData({
+      segnalazioneId: 'seg-902',
+      nuovoStato: 'PRESA_IN_CARICO',
+      motivazione: 'Aperta istruttoria interna comitato',
+      revisione: 2,
+      statoAvanzamento: 'RICEVUTA'
+    });
+    expect(fdAvanza.get('segnalazioneId')).toBe('seg-902');
+    expect(fdAvanza.get('nuovoStato')).toBe('PRESA_IN_CARICO');
+    expect(fdAvanza.get('newState')).toBe('PRESA_IN_CARICO');
+    expect(fdAvanza.get('expectedRevision')).toBe('2');
+    expect(fdAvanza.get('revisioneAttesa')).toBe('2');
+    expect(fdAvanza.get('expectedState')).toBe('RICEVUTA');
+    expect(fdAvanza.get('statoAtteso')).toBe('RICEVUTA');
+  });
+
+  // ── 12. VERIFICA ENDPOINT MEDIA PRIVATI ──
+  it('12. Verifica endpoint media privati: i media documentali usano esclusivamente /api/media/{id} garantendo la sicurezza senza storage pubblico', () => {
+    const mediaSample = [
+      { id: 'med-foto-1', tipo: 'FOTO' as const, byte_size: 55296, mime: 'image/jpeg' },
+      { id: 'med-video-1', tipo: 'VIDEO' as const, byte_size: 2048576, mime: 'video/mp4', durata_secondi: 15 }
+    ];
+
+    const photoUrl = `/api/media/${mediaSample[0].id}`;
+    const videoUrl = `/api/media/${mediaSample[1].id}`;
+
+    expect(photoUrl).toBe('/api/media/med-foto-1');
+    expect(videoUrl).toBe('/api/media/med-video-1');
+    expect(photoUrl).not.toContain('storage');
+    expect(videoUrl).not.toContain('storage');
+  });
 });

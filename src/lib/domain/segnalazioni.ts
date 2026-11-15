@@ -995,10 +995,9 @@ export async function aggiornaCategorieSegnalazione(params: {
 /**
  * Coda di supervisione del comitato (RF11)
  * Restituisce le segnalazioni che richiedono revisione o decisione.
+ * Operazione rigorosamente in sola lettura (non scrive sul catalogo categorie).
  */
 export async function getCodaRevisioniComitato() {
-  await ensureDefaultCategorie();
-
   return prisma.segnalazione.findMany({
     where: {
       stato_moderazione: { in: ['PENDENTE', 'IN_REVISIONE'] }
@@ -1015,10 +1014,9 @@ export async function getCodaRevisioniComitato() {
 
 /**
  * Tutte le segnalazioni per la supervisione comitato (RF11)
+ * Operazione rigorosamente in sola lettura (non scrive sul catalogo categorie).
  */
 export async function getTutteSegnalazioniComitato(filtroStato?: string) {
-  await ensureDefaultCategorie();
-
   const whereClause: Prisma.SegnalazioneWhereInput = {};
   if (filtroStato) {
     if (['PENDENTE', 'IN_REVISIONE', 'APPROVATA', 'RIFIUTATA'].includes(filtroStato)) {

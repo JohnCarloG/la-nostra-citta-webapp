@@ -1,11 +1,12 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getCurrentUser } from '@/actions/auth';
-import { getDettaglioSegnalazione } from '@/lib/domain/segnalazioni';
+import { getDettaglioSegnalazione, getCategorieAttive } from '@/lib/domain/segnalazioni';
 import SostegnoButton from '@/components/sostegno-button';
 import RitiraButton from '@/components/ritira-button';
 import MediaPlaceholder from '@/components/media-placeholder';
 import ReportThumbnail from '@/components/report-thumbnail';
+import ComitatoActionsForm from '@/app/(dashboard)/comitato/comitato-actions-form';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -43,6 +44,7 @@ export default async function SegnalazioneDetailPage({ params }: PageProps) {
   const isAutore = !!user && user.id === seg.autore_id;
   const isComitato = !!user && user.ruolo === 'COMITATO';
   const canRitirare = (isAutore || isComitato) && seg.stato_avanzamento !== 'RITIRATA';
+  const categorie = isComitato ? await getCategorieAttive() : [];
 
   return (
     <main className="page-container py-8 flex flex-col gap-6">
@@ -68,6 +70,49 @@ export default async function SegnalazioneDetailPage({ params }: PageProps) {
             </Link>
           )}
         </div>
+      )}
+
+      {/* Sezione Riservata al Comitato di Garanzia (Supervisione e Avanzamento) */}
+      {isComitato && (
+        <section
+          className="panel border-2 border-[var(--blue-primary)] bg-white flex flex-col gap-4 shadow-sm"
+          aria-labelledby="comitato-controls-title"
+        >
+          <div className="border-b border-[var(--border-light)] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="badge badge-categoria font-bold uppercase tracking-wider text-[0.6875rem]">
+                  Supervisione Comitato
+                </span>
+                <span className="font-mono text-xs text-[var(--text-muted)]">
+                  Rev. {seg.revisione}
+                </span>
+              </div>
+              <h2 id="comitato-controls-title" className="section-title text-base text-[var(--blue-primary)]">
+                Scheda Riservata di Supervisione e Avanzamento
+              </h2>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Delibera di ammissione, categorizzazione civica e avanzamento formale dell&rsquo;iter territoriale.
+              </p>
+            </div>
+            <Link
+              href="/comitato"
+              className="btn btn-secondary btn-xs self-start sm:self-center"
+            >
+              &larr; Registro comitato
+            </Link>
+          </div>
+
+          <ComitatoActionsForm
+            segnalazioneId={seg.id}
+            statoModerazione={seg.stato_moderazione}
+            statoAvanzamento={seg.stato_avanzamento}
+            revisione={seg.revisione}
+            categorieDisponibili={categorie.map(c => ({ id: c.id, nome: c.nome }))}
+            categorieAssegnateIds={seg.categorie.map(c => c.categoria.id)}
+            mode="all"
+          />
+        </section>
       )}
 
       {/* Scheda principale della segnalazione */}

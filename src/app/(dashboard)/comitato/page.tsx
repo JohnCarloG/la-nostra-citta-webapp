@@ -237,9 +237,9 @@ export default async function ComitatoPage({ searchParams }: PageProps) {
                   <th scope="col">Segnalazione</th>
                   <th scope="col" className="w-28 text-center">Moderazione</th>
                   <th scope="col" className="w-32 text-center">Avanzamento</th>
-                  <th scope="col" className="w-20 text-center">Rev.</th>
+                  <th scope="col" className="w-16 text-center">Rev.</th>
                   <th scope="col" className="w-24 text-center">Data</th>
-                  <th scope="col" className="w-20 text-right">Azione</th>
+                  <th scope="col" className="w-44 text-right">Azioni comitato</th>
                 </tr>
               </thead>
               <tbody>
@@ -272,12 +272,39 @@ export default async function ComitatoPage({ searchParams }: PageProps) {
                       {new Date(s.creata_il).toLocaleDateString('it-IT')}
                     </td>
                     <td className="text-right">
-                      <Link
-                        href={`/segnalazioni/${s.id}`}
-                        className="btn btn-secondary btn-sm text-xs py-0.5 px-2"
-                      >
-                        Scheda
-                      </Link>
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        <details className="relative inline-block text-left">
+                          <summary className="btn btn-secondary btn-xs py-0.5 px-2 cursor-pointer font-semibold list-none inline-flex items-center gap-1">
+                            <span>Gestisci</span>
+                            <span className="text-[0.625rem]">▾</span>
+                          </summary>
+                          <div className="absolute right-0 mt-1 w-80 sm:w-96 p-3 bg-white rounded-[var(--radius-sm)] border border-[var(--border-medium)] shadow-lg z-20 text-left">
+                            <div className="border-b border-[var(--border-light)] pb-2 mb-2 flex items-center justify-between">
+                              <span className="font-bold text-xs text-[var(--text-primary)]">
+                                Gestione avanzamento iter
+                              </span>
+                              <span className="text-[0.6875rem] text-[var(--text-muted)] font-mono">
+                                Rev. {s.revisione}
+                              </span>
+                            </div>
+                            <ComitatoActionsForm
+                              segnalazioneId={s.id}
+                              statoModerazione={s.stato_moderazione}
+                              statoAvanzamento={s.stato_avanzamento}
+                              revisione={s.revisione}
+                              mode={s.stato_moderazione === 'APPROVATA' ? 'avanzamento-only' : 'all'}
+                              categorieDisponibili={categorie.map(c => ({ id: c.id, nome: c.nome }))}
+                              categorieAssegnateIds={s.categorie?.map(c => c.categoria.id) ?? []}
+                            />
+                          </div>
+                        </details>
+                        <Link
+                          href={`/segnalazioni/${s.id}`}
+                          className="btn btn-secondary btn-xs py-0.5 px-2"
+                        >
+                          Scheda ↗
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -66,14 +66,7 @@ export async function eseguiAnalisiSegnalazione(
 
   const adapters: PipelineAdapters = {
     ...baseAdapters,
-    ...(local ? {
-      ...ollamaAdapters(),
-      // RF07 is separate: no external calls and no simulated approval in local mode.
-      moderation: { name: 'human-review', isSimulated: false, async moderate() {
-        return { verdict: 'REVIEW' as const, reasons: ['Moderazione affidata al comitato'],
-          model_version: 'no-model', policy_version: 'human-review-v1' };
-      } }
-    } : {}),
+    ...(local ? ollamaAdapters() : {}),
     ...customAdapters
   };
   const timeoutMs = options?.timeoutMs ?? (local ? 90000 : 5000);
@@ -165,7 +158,11 @@ export async function eseguiAnalisiSegnalazione(
     coherenceError?: string;
   }> = [];
 
-  for (const m of segnalazione.media) {
+  const allMedia = segnalazione.media || [];
+  const readyMedia = allMedia.filter(m => !m.stato_file || m.stato_file === 'READY');
+  const hasUnreadyMedia = allMedia.some(m => m.stato_file === 'QUARANTENA' || m.stato_file === 'ERRORE');
+
+  for (const m of readyMedia) {
     const exifHash = calculateInputHash(`${m.id}:${m.storage_key}`);
     const coherenceHash = calculateInputHash(`${segnalazione.descrizione}:${m.id}:${m.sha256}`);
 
@@ -706,29 +703,43 @@ export async function eseguiAnalisiSegnalazione(
         ? `Richiesta revisione comitato per valutazione testo: ${moderationOutput.reasons.join('; ')}`
         : `Richiesta revisione comitato per mancata risposta provider moderazione: ${moderationError}`;
     } else {
-      const hasCoherenceFailure = mediaResults.some(mr => {
-        if (mr.coherenceError) return true;
-        if (!mr.coherenceOutput) return true;
-        return mr.coherenceOutput.verdict !== 'CONSISTENT';
-      });
-
-      if (hasCoherenceFailure) {
+      // Moderazione testuale è ALLOW.
+      // Regola RF07 / RF10: una segnalazione priva di media READY autorizzati per quella segnalazione
+      // non deve diventare APPROVATA anche se il testo riceve ALLOW (separazione netta dal caso con immagine coerente).
+      if (readyMedia.length === 0) {
         targetStato = 'IN_REVISIONE';
-        const failReasons = mediaResults
-          .map(mr => mr.coherenceError || mr.coherenceOutput?.reasons?.join('; ') || 'Coerenza non verificata')
-          .join(' | ');
-        motivazione = `Richiesta revisione comitato: coerenza media non garantita o formato non supportato (${failReasons})`;
+        motivazione = 'Richiesta revisione comitato: allegato multimediale mancante o non valutabile per la segnalazione';
+      } else if (hasUnreadyMedia) {
+        targetStato = 'IN_REVISIONE';
+        motivazione = 'Richiesta revisione comitato: uno o più allegati multimediali non sono in stato READY o non sono valutabili';
       } else {
-        // Regola RF10: Nessuna pubblicazione automatica fondata su risultati simulati!
-        // In modalità reale (o se allowSimulatedApproval è disattivato), i moduli simulati (isSimulated = true)
-        // non possono autorizzare la pubblicazione automatica in APPROVATA, ma instradano al comitato (IN_REVISIONE).
-        const isSimulationUsed = adapters.moderation.isSimulated || adapters.coherence.isSimulated;
-        if ((isRealMode && isSimulationUsed) || options?.allowSimulatedApproval === false) {
+        const hasCoherenceFailure = mediaResults.some(mr => {
+          if (mr.coherenceError) return true;
+          if (!mr.coherenceOutput) return true;
+          return mr.coherenceOutput.verdict !== 'CONSISTENT';
+        });
+
+        if (hasCoherenceFailure) {
           targetStato = 'IN_REVISIONE';
-          motivazione = 'Richiesta revisione comitato: pubblicazione automatica non consentita con moduli di moderazione o coerenza visiva simulati';
+          const failReasons = mediaResults
+            .map(mr => mr.coherenceError || mr.coherenceOutput?.reasons?.join('; ') || 'Coerenza non verificata')
+            .join(' | ');
+          motivazione = `Richiesta revisione comitato: coerenza media non garantita o formato non supportato (${failReasons})`;
         } else {
-          targetStato = 'APPROVATA';
-          motivazione = 'Approvazione automatica: testo sicuro e coerenza dei media verificata';
+          // Regola RF10: Nessuna pubblicazione automatica fondata su risultati simulati!
+          // Un modulo simulato (isSimulated = true) non può MAI autorizzare la pubblicazione
+          // automatica in APPROVATA nel percorso ordinario, anche in modalità mock o con
+          // configurazione assente, ma instrada al comitato (IN_REVISIONE).
+          // L'approvazione automatica con moduli simulati è consentita SOLO se esplicitamente
+          // richiesta tramite flag eccezione 'allowSimulatedApproval === true' in test isolati.
+          const isSimulationUsed = adapters.moderation.isSimulated || adapters.coherence.isSimulated;
+          if (isSimulationUsed && options?.allowSimulatedApproval !== true) {
+            targetStato = 'IN_REVISIONE';
+            motivazione = 'Richiesta revisione comitato: pubblicazione automatica non consentita con moduli di moderazione o coerenza visiva simulati';
+          } else {
+            targetStato = 'APPROVATA';
+            motivazione = 'Approvazione automatica: testo sicuro e coerenza dei media verificata';
+          }
         }
       }
     }

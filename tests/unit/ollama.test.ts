@@ -50,6 +50,79 @@ describe('Ollama locale', () => {
       'Ollama HTTP 400: format schema invalid: json schema error'
     );
   });
+
+  describe('RF07: Moderazione testuale italiana locale', () => {
+    const modInput = { report_id: 'rep-mod-1', revision: 1, text: 'Grave buca e asfalto dissestato su via Roma', input_hash: 'hash123' };
+
+    it('invia solo testo (images undefined), senza percorsi o allegati', async () => {
+      const http = fake({ verdict: 'ALLOW', reasons: ['Segnalazione di manutenzione idonea'] });
+      const res = await ollamaAdapters(model, http).moderation.moderate(modInput);
+
+      expect(res.verdict).toBe('ALLOW');
+      expect(res.reasons).toEqual(['Segnalazione di manutenzione idonea']);
+      expect(res.model_version).toBe(model);
+      expect(res.policy_version).toBe('ollama-it-v1.0');
+
+      const [url, init] = http.mock.calls[0];
+      expect(url).toBe('http://127.0.0.1:11434/api/chat');
+      expect(init?.redirect).toBe('error');
+      const body = JSON.parse(String(init?.body));
+      expect(body.messages[1].images).toBeUndefined();
+      expect(body.messages[0].content).toContain('moderatore civico');
+      expect(body.messages[0].content).toContain('critiche energiche');
+      expect(JSON.parse(body.messages[1].content)).toEqual({ text: modInput.text });
+    });
+
+    it('accetta i verdetti ammessi: ALLOW, REVIEW, BLOCK', async () => {
+      const httpAllow = fake({ verdict: 'ALLOW', reasons: ['Critica energica ma legittima alla gestione stradale'] });
+      const resAllow = await ollamaAdapters(model, httpAllow).moderation.moderate(modInput);
+      expect(resAllow.verdict).toBe('ALLOW');
+
+      const httpReview = fake({ verdict: 'REVIEW', reasons: ['Testo confuso o potenziale spam commerciale'] });
+      const resReview = await ollamaAdapters(model, httpReview).moderation.moderate(modInput);
+      expect(resReview.verdict).toBe('REVIEW');
+
+      const httpBlock = fake({ verdict: 'BLOCK', reasons: ['Insulti personali e ingiurie nominative'] });
+      const resBlock = await ollamaAdapters(model, httpBlock).moderation.moderate(modInput);
+      expect(resBlock.verdict).toBe('BLOCK');
+    });
+
+    it('testo vuoto o spazi non invia chiamate HTTP e restituisce REVIEW per revisione umana', async () => {
+      const http = fake({});
+      const res1 = await ollamaAdapters(model, http).moderation.moderate({ ...modInput, text: '' });
+      expect(res1.verdict).toBe('REVIEW');
+      expect(res1.reasons).toEqual(['Descrizione assente o vuota']);
+
+      const res2 = await ollamaAdapters(model, http).moderation.moderate({ ...modInput, text: '   \n\t  ' });
+      expect(res2.verdict).toBe('REVIEW');
+      expect(http).not.toHaveBeenCalled();
+    });
+
+    it('rifiuta risposte malformate o verdetti non autorizzati', async () => {
+      const httpInvalidVerdict = fake({ verdict: 'APPROVATA', reasons: ['ok'] });
+      await expect(ollamaAdapters(model, httpInvalidVerdict).moderation.moderate(modInput)).rejects.toThrow(
+        'Verdetto di moderazione Ollama non valido o ambiguo'
+      );
+
+      const httpInvalidReasons = fake({ verdict: 'ALLOW', reasons: 'non-un-array' });
+      await expect(ollamaAdapters(model, httpInvalidReasons).moderation.moderate(modInput)).rejects.toThrow(
+        'Motivazioni di moderazione Ollama non valide'
+      );
+
+      const httpEmptyReasons = fake({ verdict: 'ALLOW', reasons: [] });
+      await expect(ollamaAdapters(model, httpEmptyReasons).moderation.moderate(modInput)).rejects.toThrow(
+        'Motivazioni di moderazione Ollama non valide'
+      );
+    });
+
+    it('gestisce timeout e guasti HTTP sollevando eccezione controllata', async () => {
+      const httpTimeout = vi.fn<typeof fetch>().mockRejectedValue(new DOMException('The operation was aborted', 'TimeoutError'));
+      await expect(ollamaAdapters(model, httpTimeout).moderation.moderate(modInput)).rejects.toThrow();
+
+      const http500 = vi.fn<typeof fetch>().mockResolvedValue(new Response('Internal server error', { status: 500 }));
+      await expect(ollamaAdapters(model, http500).moderation.moderate(modInput)).rejects.toThrow('Ollama HTTP 500');
+    });
+  });
   it('usa qwen3-vl:4b-instruct come predefinito e supporta selezione qwen3-vl:2b-instruct', async () => {
     const orig = process.env.OLLAMA_MODEL;
     try {

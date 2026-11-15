@@ -1,12 +1,13 @@
 // Backend only. Supported lab models; no remote host, redirects, keys, or automatic pulls.
-import type { ClassificationInput, CoherenceInput, CoherenceOutput, PipelineAdapters } from './types';
+import type { ClassificationInput, CoherenceInput, CoherenceOutput, ModerationInput, ModerationOutput, PipelineAdapters } from './types';
 
 const tags = ['qwen3-vl:4b-instruct', 'qwen3-vl:2b-instruct'];
 const verdicts = ['CONSISTENT', 'UNCERTAIN', 'INCONSISTENT'] as const;
+const moderationVerdicts = ['ALLOW', 'REVIEW', 'BLOCK'] as const;
 type Json = Record<string, unknown>;
 function record(v: unknown): v is Json { return !!v && typeof v === 'object' && !Array.isArray(v); }
 export function ollamaAdapters(model = process.env.OLLAMA_MODEL ?? tags[0], transport = fetch):
-  Pick<PipelineAdapters, 'classification' | 'coherence'> {
+  Pick<PipelineAdapters, 'moderation' | 'classification' | 'coherence'> {
   if (!tags.includes(model)) throw new Error('Modello Ollama locale non autorizzato');
   async function chat(system: string, content: Json, format: Json, timeoutMs: number, image?: Buffer) {
     const res = await transport('http://127.0.0.1:11434/api/chat', {
@@ -37,6 +38,47 @@ export function ollamaAdapters(model = process.env.OLLAMA_MODEL ?? tags[0], tran
     return out;
   }
   return {
+    moderation: { name: 'ollama-moderation', isSimulated: false,
+      async moderate({ text }: ModerationInput, options): Promise<ModerationOutput> {
+        if (typeof text !== 'string' || !text.trim()) {
+          return {
+            verdict: 'REVIEW',
+            reasons: ['Descrizione assente o vuota'],
+            model_version: model,
+            policy_version: 'ollama-it-v1.0'
+          };
+        }
+        const out = await chat(
+          'Sei il moderatore civico di una piattaforma partecipata per il comune di Milano. ' +
+          'Valuta la descrizione testuale applicando i seguenti criteri:\n' +
+          '- ALLOW: contenuto appropriato per una segnalazione civica, incluse critiche energiche, polemiche o severe verso l\'amministrazione o la manutenzione pubblica.\n' +
+          '- REVIEW: testo dubbio, confuso, off-topic, spam potenziale o con espressioni ambigue che richiedono la valutazione del comitato.\n' +
+          '- BLOCK: insulti personali diretti, ingiurie o diffamazione contro persone fisiche, minacce, discriminazione o contenuti palesemente illeciti.\n' +
+          'Restituisci un oggetto JSON con "verdict" (ALLOW, REVIEW o BLOCK) e "reasons" (array di stringhe con brevi motivazioni in italiano).',
+          { text },
+          {
+            type: 'object',
+            additionalProperties: false,
+            required: ['verdict', 'reasons'],
+            properties: {
+              verdict: { type: 'string', enum: moderationVerdicts },
+              reasons: { type: 'array', items: { type: 'string' } }
+            }
+          },
+          options?.timeoutMs ?? 90000
+        );
+        const verdict = moderationVerdicts.find(v => v === out.verdict);
+        if (!verdict) throw new Error('Verdetto di moderazione Ollama non valido o ambiguo');
+        if (!Array.isArray(out.reasons) || out.reasons.length === 0 || !out.reasons.every((r): r is string => typeof r === 'string' && r.trim().length > 0)) {
+          throw new Error('Motivazioni di moderazione Ollama non valide');
+        }
+        return {
+          verdict,
+          reasons: out.reasons.map(r => r.trim()),
+          model_version: model,
+          policy_version: 'ollama-it-v1.0'
+        };
+      } },
     classification: { name: 'ollama-classification', isSimulated: false,
       async classify({ text, allowed_categories }: ClassificationInput, options) {
         const ids = allowed_categories.map(c => c.id);

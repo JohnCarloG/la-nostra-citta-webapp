@@ -10,7 +10,9 @@ import {
   eseguiResetPassword as domainEseguiResetPassword,
   reinviaVerificaEmail as domainReinviaVerificaEmail,
   getSessionUtente,
-  completaProfiloUtente
+  completaProfiloUtente,
+  cambiaPasswordAutenticato,
+  AuthDomainError
 } from '@/lib/domain/auth';
 import { validaCodiceFiscale } from '@/lib/domain/codice-fiscale';
 import { authRateLimiter, resetPasswordRateLimiter } from '@/lib/rate-limiter';
@@ -236,6 +238,9 @@ export async function requestPasswordResetAction(formData: FormData) {
 
 /**
  * Server Action per Conferma Reset Password
+ * Contratto esplicito: token, password e confermaPassword.
+ * Non applica trim alle password e richiede la coincidenza esatta dei campi.
+ * Non richiede la password attuale.
  */
 export async function confirmPasswordResetAction(formData: FormData) {
   const token = (formData.get('token') as string)?.trim();
@@ -260,6 +265,76 @@ export async function confirmPasswordResetAction(formData: FormData) {
   } catch (err: unknown) {
     return { error: (err as Error).message };
   }
+}
+
+/**
+ * Server Action per il Cambio Password di un Utente Autenticato
+ * Identifica l'utente esclusivamente dalla sessione verificata (nessun ID utente accettato dal form).
+ * Applica rate limiting sui tentativi errati di password attuale.
+ * Solo dopo transazione atomica completata con successo, cancella il cookie di sessione.
+ * Non propaga dettagli interni o errori Prisma al client; se il DB ha confermato il cambio
+ * e fallisce soltanto il cookie, informa l'utente che le sessioni sul server sono già revocate.
+ */
+export async function cambiaPasswordAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { error: 'Sessione non valida o scaduta. Effettua nuovamente l\'accesso.' };
+  }
+
+  // Rate Limiting per l'account autenticato
+  const limit = authRateLimiter.check(`change-password:${user.id}`);
+  if (!limit.allowed) {
+    return { 
+      error: `Troppi tentativi di modifica password. Riprova tra ${limit.retryAfterSeconds ?? 60} secondi.` 
+    };
+  }
+
+  const passwordAttuale = formData.get('passwordAttuale') as string;
+  const nuovaPassword = formData.get('nuovaPassword') as string;
+  const confermaPassword = formData.get('confermaPassword') as string;
+
+  if (!passwordAttuale || !nuovaPassword || !confermaPassword) {
+    return { error: 'Tutti i campi sono obbligatori' };
+  }
+
+  if (nuovaPassword !== confermaPassword) {
+    return { error: 'La nuova password e la conferma non coincidono' };
+  }
+
+  if (nuovaPassword.length < 8) {
+    return { error: 'La nuova password deve contenere almeno 8 caratteri' };
+  }
+
+  try {
+    await cambiaPasswordAutenticato(user.id, passwordAttuale, nuovaPassword, confermaPassword);
+    // Reset rate limiter su successo
+    authRateLimiter.reset(`change-password:${user.id}`);
+  } catch (err: unknown) {
+    if (err instanceof AuthDomainError) {
+      return { error: err.message };
+    }
+    // Errore imprevisto o di rete/database (Prisma): non propagare err.message al browser
+    return { 
+      error: 'Si è verificato un errore di sistema durante l\'aggiornamento della password. Riprova più tardi.' 
+    };
+  }
+
+  // Il database ha confermato il commit atomico (password aggiornata e sessioni revocate).
+  // Se fallisce unicamente la rimozione del cookie locale, informiamo l'utente che le sessioni sul server sono già chiuse:
+  try {
+    const cookieStore = await cookies();
+    cookieStore.delete('session_token');
+  } catch {
+    return {
+      success: false,
+      error: 'Password aggiornata e sessioni revocate sul server, ma non è stato possibile rimuovere il cookie locale. Chiudi il browser o accedi di nuovo.'
+    };
+  }
+
+  return { 
+    success: true, 
+    message: 'Password aggiornata. Accedi di nuovo.' 
+  };
 }
 
 /**

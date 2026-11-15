@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   inspectFileBuffer,
+  extractMp4Duration,
+  hasMp4VideoTrack,
   MAX_PHOTO_BYTES,
   MAX_VIDEO_BYTES
 } from '../../src/lib/storage/mime-validator';
@@ -55,7 +57,187 @@ function createValidWebp(): Buffer {
   return Buffer.concat([riffHeader, payload]);
 }
 
-function createValidMp4(): Buffer {
+function createHdlrBox(handlerType = 'vide'): Buffer {
+  const name = Buffer.from('VideoHandler\0', 'ascii');
+  const size = 8 + 4 + 4 + 4 + name.length; // 8 header + 4 ver/flags + 4 predefined + 4 handler + name
+  const buf = Buffer.alloc(size);
+  buf.writeUInt32BE(size, 0);
+  buf.write('hdlr', 4, 'ascii');
+  buf.writeUInt8(0, 8); // version 0
+  buf.writeUInt32BE(0, 12); // pre_defined
+  buf.write(handlerType, 16, 'ascii'); // 'vide' o 'soun'
+  name.copy(buf, 20);
+  return buf;
+}
+
+function createMdiaBox(handlerType = 'vide'): Buffer {
+  const hdlr = createHdlrBox(handlerType);
+  const size = 8 + hdlr.length;
+  const buf = Buffer.alloc(8);
+  buf.writeUInt32BE(size, 0);
+  buf.write('mdia', 4, 'ascii');
+  return Buffer.concat([buf, hdlr]);
+}
+
+function createTrakBox(handlerType = 'vide'): Buffer {
+  const mdia = createMdiaBox(handlerType);
+  const size = 8 + mdia.length;
+  const buf = Buffer.alloc(8);
+  buf.writeUInt32BE(size, 0);
+  buf.write('trak', 4, 'ascii');
+  return Buffer.concat([buf, mdia]);
+}
+
+export function createMp4WithoutVideoTrack(durationSeconds = 10, timescale = 1000): Buffer {
+  const ftyp = Buffer.concat([
+    Buffer.from([0x00, 0x00, 0x00, 0x14]),
+    Buffer.from('ftyp', 'ascii'),
+    Buffer.from('isom', 'ascii'),
+    Buffer.from([0x00, 0x00, 0x02, 0x00]),
+    Buffer.from('isom', 'ascii')
+  ]);
+  const durationVal = Math.round(durationSeconds * timescale);
+  const mvhd = Buffer.alloc(108);
+  mvhd.writeUInt32BE(108, 0);
+  mvhd.write('mvhd', 4, 'ascii');
+  mvhd.writeUInt8(0, 8);
+  mvhd.writeUInt32BE(timescale, 20);
+  mvhd.writeUInt32BE(durationVal, 24);
+
+  const moovHeader = Buffer.alloc(8);
+  moovHeader.writeUInt32BE(8 + mvhd.length, 0);
+  moovHeader.write('moov', 4, 'ascii');
+  const moov = Buffer.concat([moovHeader, mvhd]);
+  return Buffer.concat([ftyp, moov]);
+}
+
+export function createMp4WithAudioTrackOnly(durationSeconds = 10, timescale = 1000): Buffer {
+  const ftyp = Buffer.concat([
+    Buffer.from([0x00, 0x00, 0x00, 0x14]),
+    Buffer.from('ftyp', 'ascii'),
+    Buffer.from('isom', 'ascii'),
+    Buffer.from([0x00, 0x00, 0x02, 0x00]),
+    Buffer.from('isom', 'ascii')
+  ]);
+  const durationVal = Math.round(durationSeconds * timescale);
+  const mvhd = Buffer.alloc(108);
+  mvhd.writeUInt32BE(108, 0);
+  mvhd.write('mvhd', 4, 'ascii');
+  mvhd.writeUInt8(0, 8);
+  mvhd.writeUInt32BE(timescale, 20);
+  mvhd.writeUInt32BE(durationVal, 24);
+
+  const trak = createTrakBox('soun'); // Solo audio!
+  const moovHeader = Buffer.alloc(8);
+  moovHeader.writeUInt32BE(8 + mvhd.length + trak.length, 0);
+  moovHeader.write('moov', 4, 'ascii');
+  const moov = Buffer.concat([moovHeader, mvhd, trak]);
+  return Buffer.concat([ftyp, moov]);
+}
+
+export function createMp4WithTruncatedHdlrAndVideInNextBox(): Buffer {
+  const ftyp = Buffer.concat([
+    Buffer.from([0x00, 0x00, 0x00, 0x14]),
+    Buffer.from('ftyp', 'ascii'),
+    Buffer.from('isom', 'ascii'),
+    Buffer.from([0x00, 0x00, 0x02, 0x00]),
+    Buffer.from('isom', 'ascii')
+  ]);
+  const mvhd = Buffer.alloc(108);
+  mvhd.writeUInt32BE(108, 0);
+  mvhd.write('mvhd', 4, 'ascii');
+  mvhd.writeUInt8(0, 8);
+  mvhd.writeUInt32BE(1000, 20);
+  mvhd.writeUInt32BE(10000, 24);
+
+  // Box 1: hdlr troncato a soli 12 byte (header 8 + 4 byte version/flags, privo di predefined e handler_type)
+  const truncatedHdlr = Buffer.alloc(12);
+  truncatedHdlr.writeUInt32BE(12, 0);
+  truncatedHdlr.write('hdlr', 4, 'ascii');
+  truncatedHdlr.writeUInt8(0, 8);
+
+  // Box 2: box successivo (minf) in mdia il cui payload contiene 'vide'
+  const nextBox = Buffer.alloc(16);
+  nextBox.writeUInt32BE(16, 0);
+  nextBox.write('minf', 4, 'ascii');
+  nextBox.write('vide', 8, 'ascii');
+
+  const mdiaPayload = Buffer.concat([truncatedHdlr, nextBox]);
+  const mdiaHeader = Buffer.alloc(8);
+  mdiaHeader.writeUInt32BE(8 + mdiaPayload.length, 0);
+  mdiaHeader.write('mdia', 4, 'ascii');
+  const mdia = Buffer.concat([mdiaHeader, mdiaPayload]);
+
+  const trakHeader = Buffer.alloc(8);
+  trakHeader.writeUInt32BE(8 + mdia.length, 0);
+  trakHeader.write('trak', 4, 'ascii');
+  const trak = Buffer.concat([trakHeader, mdia]);
+
+  const moovHeader = Buffer.alloc(8);
+  moovHeader.writeUInt32BE(8 + mvhd.length + trak.length, 0);
+  moovHeader.write('moov', 4, 'ascii');
+  const moov = Buffer.concat([moovHeader, mvhd, trak]);
+
+  return Buffer.concat([ftyp, moov]);
+}
+
+export function createMp4WithLargeBoxHighBitsSet(): Buffer {
+  const ftyp = Buffer.concat([
+    Buffer.from([0x00, 0x00, 0x00, 0x14]),
+    Buffer.from('ftyp', 'ascii'),
+    Buffer.from('isom', 'ascii'),
+    Buffer.from([0x00, 0x00, 0x02, 0x00]),
+    Buffer.from('isom', 'ascii')
+  ]);
+
+  // Box esteso a 64-bit con bit alti non nulli (high = 1) e parte bassa plausibile (low = 24)
+  const largeBox = Buffer.alloc(24);
+  largeBox.writeUInt32BE(1, 0); // size = 1 indica estensione 64-bit
+  largeBox.write('free', 4, 'ascii');
+  largeBox.writeUInt32BE(1, 8); // Parte alta non nulla (> 0)
+  largeBox.writeUInt32BE(24, 12); // Parte bassa plausibile
+
+  const mvhd = Buffer.alloc(108);
+  mvhd.writeUInt32BE(108, 0);
+  mvhd.write('mvhd', 4, 'ascii');
+  mvhd.writeUInt8(0, 8);
+  mvhd.writeUInt32BE(1000, 20);
+  mvhd.writeUInt32BE(10000, 24);
+
+  const trak = createTrakBox('vide');
+  const moovHeader = Buffer.alloc(8);
+  moovHeader.writeUInt32BE(8 + mvhd.length + trak.length, 0);
+  moovHeader.write('moov', 4, 'ascii');
+  const moov = Buffer.concat([moovHeader, mvhd, trak]);
+
+  return Buffer.concat([ftyp, largeBox, moov]);
+}
+
+export function createMinimalReproducibleMp4(): Buffer {
+  const ftyp = Buffer.concat([
+    Buffer.from([0x00, 0x00, 0x00, 0x14]),
+    Buffer.from('ftyp', 'ascii'),
+    Buffer.from('isom', 'ascii'),
+    Buffer.from([0x00, 0x00, 0x02, 0x00]),
+    Buffer.from('isom', 'ascii')
+  ]);
+  const mvhd = Buffer.alloc(108);
+  mvhd.writeUInt32BE(108, 0);
+  mvhd.write('mvhd', 4, 'ascii');
+  mvhd.writeUInt8(0, 8);
+  mvhd.writeUInt32BE(1000, 20);
+  mvhd.writeUInt32BE(5000, 24); // 5.0 secondi
+
+  const trak = createTrakBox('vide');
+  const moovHeader = Buffer.alloc(8);
+  moovHeader.writeUInt32BE(8 + mvhd.length + trak.length, 0);
+  moovHeader.write('moov', 4, 'ascii');
+  const moov = Buffer.concat([moovHeader, mvhd, trak]);
+
+  return Buffer.concat([ftyp, moov]);
+}
+
+export function createValidMp4(durationSeconds = 10, timescale = 1000): Buffer {
   // ftyp box: 20 bytes
   const ftyp = Buffer.concat([
     Buffer.from([0x00, 0x00, 0x00, 0x14]),
@@ -64,11 +246,25 @@ function createValidMp4(): Buffer {
     Buffer.from([0x00, 0x00, 0x02, 0x00]),
     Buffer.from('isom', 'ascii')
   ]);
-  // moov box: 8 bytes
-  const moov = Buffer.concat([
-    Buffer.from([0x00, 0x00, 0x00, 0x08]),
-    Buffer.from('moov', 'ascii')
-  ]);
+
+  // mvhd box (Movie Header): 108 bytes
+  const durationVal = Math.round(durationSeconds * timescale);
+  const mvhd = Buffer.alloc(108);
+  mvhd.writeUInt32BE(108, 0);
+  mvhd.write('mvhd', 4, 'ascii');
+  mvhd.writeUInt8(0, 8); // Version 0
+  mvhd.writeUInt32BE(timescale, 20);
+  mvhd.writeUInt32BE(durationVal, 24);
+
+  // trak box con traccia video 'vide'
+  const trak = createTrakBox('vide');
+
+  // moov box container: 8 byte header + mvhd length + trak length
+  const moovHeader = Buffer.alloc(8);
+  moovHeader.writeUInt32BE(8 + mvhd.length + trak.length, 0);
+  moovHeader.write('moov', 4, 'ascii');
+
+  const moov = Buffer.concat([moovHeader, mvhd, trak]);
   return Buffer.concat([ftyp, moov]);
 }
 
@@ -130,12 +326,135 @@ describe('Validazione Strutturale Binaria e Anti-Tampering (inspectFileBuffer)',
     expect(res.error).toMatch(/troncato|inferiore/i);
   });
 
-  it('Riconosce file MP4 validi con box ftyp e moov/mdat', () => {
-    const validMp4 = createValidMp4();
+  it('Riconosce file MP4 validi con box ftyp, moov e durata valida <= 60s', () => {
+    const validMp4 = createValidMp4(10);
     const res = inspectFileBuffer(validMp4);
     expect(res.valid).toBe(true);
     expect(res.tipoMedia).toBe('VIDEO');
     expect(res.realMime).toBe('video/mp4');
+    expect(res.durataSecondi).toBe(10);
+  });
+
+  it('RF04: Accetta video MP4 sintetico di durata esattamente pari a 60 secondi', () => {
+    const exactly60 = createValidMp4(60.0);
+    const res = inspectFileBuffer(exactly60);
+    expect(res.valid).toBe(true);
+    expect(res.tipoMedia).toBe('VIDEO');
+    expect(res.durataSecondi).toBe(60);
+  });
+
+  it('RF04: Rifiuta video MP4 con durata poco oltre 60 secondi (60.5s e 61s) confrontando prima dell arrotondamento anche sotto 50 MiB', () => {
+    // 60.5s: se arrotondato per difetto sarebbe 60s, ma prima dell'arrotondamento supera il limite
+    const slightlyOver = createValidMp4(60.5, 1000);
+    expect(slightlyOver.length).toBeLessThan(MAX_VIDEO_BYTES); // Ampiamente sotto 50 MiB
+    const resSlightlyOver = inspectFileBuffer(slightlyOver);
+    expect(resSlightlyOver.valid).toBe(false);
+    expect(resSlightlyOver.error).toContain('supera il limite massimo consentito di 60 secondi');
+    expect(resSlightlyOver.error).toContain('60.5 s');
+
+    const video61 = createValidMp4(61.0, 1000);
+    const res61 = inspectFileBuffer(video61);
+    expect(res61.valid).toBe(false);
+    expect(res61.error).toContain('supera il limite massimo consentito di 60 secondi');
+    expect(res61.error).toContain('61.0 s');
+  });
+
+  it('RF04: Rifiuta video MP4 con durata non leggibile o assente nei metadati (moov senza mvhd o timescale nullo)', () => {
+    // moov privo di mvhd
+    const moovWithoutMvhd = Buffer.concat([
+      Buffer.from([0x00, 0x00, 0x00, 0x14]),
+      Buffer.from('ftyp', 'ascii'),
+      Buffer.from('isom', 'ascii'),
+      Buffer.from([0x00, 0x00, 0x02, 0x00]),
+      Buffer.from('isom', 'ascii'),
+      Buffer.from([0x00, 0x00, 0x00, 0x08]),
+      Buffer.from('moov', 'ascii')
+    ]);
+    const resNoMvhd = inspectFileBuffer(moovWithoutMvhd);
+    expect(resNoMvhd.valid).toBe(false);
+    expect(resNoMvhd.error).toContain('Durata del video non leggibile');
+
+    // timescale nullo (divisione per zero / durata infinita)
+    const zeroTimescaleMp4 = createValidMp4(10, 0);
+    const resZeroTimescale = inspectFileBuffer(zeroTimescaleMp4);
+    expect(resZeroTimescale.valid).toBe(false);
+    expect(resZeroTimescale.error).toContain('Durata del video non valida');
+  });
+
+  it('RF04: Il parser reale extractMp4Duration legge direttamente i byte binari dell atomo mvhd', () => {
+    const rawMp4 = createValidMp4(45.2, 1000);
+    const parsed = extractMp4Duration(rawMp4);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.durationSeconds).toBeCloseTo(45.2, 1);
+    }
+  });
+
+  it('RF04 Regressione: Rifiuta file MP4 contenente solo ftyp/moov/mvhd privo di tracce multimediali (nessun box trak)', () => {
+    const mp4NoTrak = createMp4WithoutVideoTrack(10);
+    const res = inspectFileBuffer(mp4NoTrak);
+    expect(res.valid).toBe(false);
+    expect(res.error).toContain('privo di tracce multimediali');
+
+    const trackCheck = hasMp4VideoTrack(mp4NoTrak);
+    expect(trackCheck.hasVideoTrack).toBe(false);
+    expect(trackCheck.error).toContain('nessun box trak presente');
+  });
+
+  it('RF04 Regressione: Rifiuta file MP4 con solo traccia audio (handler "soun") e nessuna traccia video ("vide")', () => {
+    const mp4AudioOnly = createMp4WithAudioTrackOnly(10);
+    const res = inspectFileBuffer(mp4AudioOnly);
+    expect(res.valid).toBe(false);
+    expect(res.error).toContain("privo di traccia video: nessun flusso con handler 'vide'");
+
+    const trackCheck = hasMp4VideoTrack(mp4AudioOnly);
+    expect(trackCheck.hasVideoTrack).toBe(false);
+    expect(trackCheck.error).toContain("nessun flusso con handler 'vide'");
+  });
+
+  it('RF04: hasMp4VideoTrack riconosce correttamente la presenza della traccia video ("vide")', () => {
+    const validVideo = createValidMp4(15);
+    const trackCheck = hasMp4VideoTrack(validVideo);
+    expect(trackCheck.hasVideoTrack).toBe(true);
+    expect(trackCheck.error).toBeUndefined();
+  });
+
+  it('RF04 Regressione: Rifiuta box hdlr troncato anche se il box successivo contiene i byte "vide"', () => {
+    const mp4TruncatedHdlr = createMp4WithTruncatedHdlrAndVideInNextBox();
+    const trackCheck = hasMp4VideoTrack(mp4TruncatedHdlr);
+    // Deve fallire perché i 12 byte non sono dentro hdlr, nonostante 'vide' sia nel box successivo
+    expect(trackCheck.hasVideoTrack).toBe(false);
+
+    const res = inspectFileBuffer(mp4TruncatedHdlr);
+    expect(res.valid).toBe(false);
+    expect(res.error).toMatch(/privo di traccia video|non rilevabile/i);
+  });
+
+  it('RF04 Regressione: Rifiuta box esteso a 64-bit con 32 bit alti non nulli anche con parte bassa plausibile', () => {
+    const mp4WithLargeBoxHighBits = createMp4WithLargeBoxHighBitsSet();
+    const res = inspectFileBuffer(mp4WithLargeBoxHighBits);
+    expect(res.valid).toBe(false);
+    expect(res.error).toContain('bit alti non nulli');
+  });
+
+  it('RF04: Fixture strutturale senza fotogrammi da 185 byte validata con successo e durata 5.0s letta dall app', () => {
+    const minimalMp4 = createMinimalReproducibleMp4();
+    expect(minimalMp4.length).toBe(185);
+
+    const res = inspectFileBuffer(minimalMp4);
+    expect(res.valid).toBe(true);
+    expect(res.tipoMedia).toBe('VIDEO');
+    expect(res.realMime).toBe('video/mp4');
+    expect(res.durataSecondi).toBe(5);
+
+    const durationCheck = extractMp4Duration(minimalMp4);
+    expect(durationCheck.success).toBe(true);
+    if (durationCheck.success) {
+      expect(durationCheck.durationSeconds).toBe(5.0);
+    }
+
+    const trackCheck = hasMp4VideoTrack(minimalMp4);
+    expect(trackCheck.hasVideoTrack).toBe(true);
   });
 
   it('Rifiuta MP4 privo di tracce audio/video (senza moov o mdat) o troncato', () => {

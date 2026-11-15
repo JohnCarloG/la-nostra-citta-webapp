@@ -85,8 +85,11 @@ La connessione verso il cluster gestito Aiven MySQL richiede il certificato dell
 
 ### Evidenze Tecniche Distinte per Sistema Operativo:
 - **Windows**: L'handshake TLS con validazione strict (`sslaccept=strict`) e verifica del certificato CA è stato **eseguito e verificato con successo in sessione** sia con Prisma Client sia tramite script diagnostici su porta 11582.
-- **macOS**: Rilevato vincolo ambientale documentato. Il framework nativo *Apple Security Framework* impone verifiche stringenti sull'Extended Key Usage dei certificati x509: l'assenza dell'estensione specifica `serverAuth` nel certificato emesso dal server database può generare l'errore `errSecInvalidExtendedKeyUsage (-67609)` durante l'handshake con parametro `sslaccept=strict` nel driver Prisma.
-- **Linux**: L'ambiente adotta lo stack OpenSSL standard per Node.js; la configurazione è predisposta ma l'esecuzione con validazione strict su host Linux live **non è stata eseguita in questa sessione e richiederà verifica empirica dedicata** prima dell'esercizio. Non si presume funzionamento senza evidenza diretta.
+- **macOS**: 
+  - *Client nativo MySQL (`/usr/local/bin/mysql`)*: **CONNESSO con SUCCESSO** con `--ssl-mode=VERIFY_IDENTITY` e `--ssl-ca=certs/ca.pem` (TLS 1.3 `TLS_AES_128_GCM_SHA256`, database `la_nostra_citta_test`, MySQL 8.4.11).
+  - *Prisma engine su macOS*: fallisce con `Error opening a TLS connection: The certificate was not trusted`. Causa accertata empiricamente sul certificato foglia presentato dal cluster Aiven: Apple `Security.framework` (`kSecPolicyNameSSL` / `SecTrustEvaluateWithError`) rigetta la catena con `Cert Verify Result: Invalid Extended Key Usage for policy` poiché il certificato emesso da Aiven per MySQL non include l'estensione EKU `serverAuth`.
+  - *Docker Desktop su iMac*: l'applicazione è installata ma non può avviare il demone locale su questo hardware (`iMac11,3`, Mid 2010 Intel Westmere) poiché il kernel riporta `kern.hv_support: 0` (mancanza di supporto hardware ad Apple `Hypervisor.framework`). L'esecuzione containerizzata richiede quindi un host Linux esterno puntato tramite `export DOCKER_HOST="ssh://..."` o `tcp://...`.
+- **Linux**: L'ambiente adotta lo stack OpenSSL standard per Node.js (in cui la validazione certificati con la CA Aiven ha dimostrato di avere pieno successo nel client MySQL). Predisposto in `Dockerfile` e `docker-compose.yml`.
 
 ---
 
@@ -222,7 +225,7 @@ npm run typecheck
 # 3. Controllo qualità del codice ESLint (0 errori, 0 warning)
 npm run lint
 
-# 4. Esecuzione test unitari Vitest (171/171 superati su 18 file)
+# 4. Esecuzione test unitari Vitest (204/204 superati su 21 file al 100%)
 npm run test:unit
 
 # 5. Esecuzione test di integrazione su database Aiven (richiede .env.test e connettività)

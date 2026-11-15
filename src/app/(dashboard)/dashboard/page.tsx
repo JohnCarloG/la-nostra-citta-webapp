@@ -86,7 +86,14 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <Link
+            href="/account/sicurezza"
+            className="btn btn-secondary btn-sm"
+            aria-label="Gestione sicurezza e cambio password"
+          >
+            Sicurezza account &rarr;
+          </Link>
           {isComitato && (
             <Link
               href="/comitato"

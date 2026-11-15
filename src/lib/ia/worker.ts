@@ -71,7 +71,11 @@ export async function claimNextOutboxJob(): Promise<{
  */
 export async function processSingleOutboxJob(
   customAdapters?: Partial<PipelineAdapters>,
-  options?: { timeoutMs?: number; maxRetries?: number }
+  options?: {
+    timeoutMs?: number;
+    maxRetries?: number;
+    adapterMode?: 'real' | 'mock' | 'ollama';
+  }
 ): Promise<ProcessJobResult> {
   const maxRetries = options?.maxRetries ?? MAX_WORKER_RETRIES;
 
@@ -95,7 +99,13 @@ export async function processSingleOutboxJob(
       job.segnalazione_id,
       job.revisione,
       customAdapters,
-      { timeoutMs: options?.timeoutMs }
+      {
+        timeoutMs: options?.timeoutMs,
+        adapterMode: options?.adapterMode,
+        // Nel worker ordinario, l'approvazione simulata è TASSATIVAMENTE VIETATA (sempre false).
+        // Nessun override dall'esterno può autorizzare la pubblicazione automatica con moduli simulati.
+        allowSimulatedApproval: false
+      }
     );
   } catch (err: unknown) {
     processingError = err instanceof Error ? err : new Error(String(err));

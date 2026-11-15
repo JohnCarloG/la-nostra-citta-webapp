@@ -8,6 +8,7 @@ import { POST as uploadsHandler } from '../../src/app/api/uploads/route';
 import { NextRequest } from 'next/server';
 import { prisma } from '../../src/lib/db';
 import { getCurrentUser } from '../../src/actions/auth';
+import { createValidMp4 } from './mime-validator.test';
 
 // Mock DB
 vi.mock('../../src/lib/db', () => ({
@@ -171,6 +172,90 @@ describe('Dominio Uploads e Route Handler /api/uploads (Fase 3 - RF04, VI09)', (
       // Verifica cancellazione compensativa
       expect(mockStorage.deleteObject).toHaveBeenCalledTimes(1);
     });
+
+    it('RF04: Accetta video MP4 valido entro i 60 secondi e persiste durata_secondi nel DB', async () => {
+      vi.mocked(prisma.utente.findUnique).mockResolvedValue({
+        id: activeVerifiedUser.id,
+        stato_account: 'ATTIVO',
+        verificato_il: new Date(),
+      } as unknown as Utente);
+
+      const mp4_60s = createValidMp4(60.0);
+      const mockRecord = {
+        id: 'upload-mp4-60',
+        proprietario_id: activeVerifiedUser.id,
+        storage_key: 'uploads/user-1/video.mp4',
+        tipo: 'VIDEO' as const,
+        mime: 'video/mp4',
+        byte_size: mp4_60s.length,
+        durata_secondi: 60,
+        sha256: 'dummy-sha-mp4',
+        exif_lat: null,
+        exif_lon: null,
+        stato: 'VALIDO',
+        scade_il: new Date(Date.now() + 2 * 60 * 60 * 1000),
+      };
+
+      vi.mocked(mockStorage.putObject).mockResolvedValue(undefined);
+      vi.mocked(prisma.uploadTemporaneo.create).mockResolvedValue(mockRecord as unknown as UploadTemporaneo);
+
+      const res = await caricaUploadTemporaneo(activeVerifiedUser.id, mp4_60s);
+
+      expect(res.uploadId).toBe('upload-mp4-60');
+      expect(res.tipo).toBe('VIDEO');
+      expect(res.mime).toBe('video/mp4');
+      expect(res.durataSecondi).toBe(60);
+      expect(mockStorage.putObject).toHaveBeenCalledTimes(1);
+      expect(prisma.uploadTemporaneo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            durata_secondi: 60,
+            tipo: 'VIDEO',
+            mime: 'video/mp4'
+          })
+        })
+      );
+    });
+
+    it('RF04: Rifiuta video MP4 con durata > 60 secondi (60.5s e 61s) senza lasciare file né record orfani', async () => {
+      vi.mocked(prisma.utente.findUnique).mockResolvedValue({
+        id: activeVerifiedUser.id,
+        stato_account: 'ATTIVO',
+        verificato_il: new Date(),
+      } as unknown as Utente);
+
+      const mp4_61s = createValidMp4(61.0);
+      await expect(caricaUploadTemporaneo(activeVerifiedUser.id, mp4_61s))
+        .rejects.toThrow('supera il limite massimo consentito di 60 secondi');
+
+      // Nessun file scritto su storage e nessun record creato nel DB (zero orfani)
+      expect(mockStorage.putObject).not.toHaveBeenCalled();
+      expect(prisma.uploadTemporaneo.create).not.toHaveBeenCalled();
+    });
+
+    it('RF04: Rifiuta video MP4 con durata non leggibile senza creare file o record orfani', async () => {
+      vi.mocked(prisma.utente.findUnique).mockResolvedValue({
+        id: activeVerifiedUser.id,
+        stato_account: 'ATTIVO',
+        verificato_il: new Date(),
+      } as unknown as Utente);
+
+      const invalidMp4 = Buffer.concat([
+        Buffer.from([0x00, 0x00, 0x00, 0x14]),
+        Buffer.from('ftyp', 'ascii'),
+        Buffer.from('isom', 'ascii'),
+        Buffer.from([0x00, 0x00, 0x02, 0x00]),
+        Buffer.from('isom', 'ascii'),
+        Buffer.from([0x00, 0x00, 0x00, 0x08]),
+        Buffer.from('moov', 'ascii')
+      ]);
+
+      await expect(caricaUploadTemporaneo(activeVerifiedUser.id, invalidMp4))
+        .rejects.toThrow('Durata del video non leggibile');
+
+      expect(mockStorage.putObject).not.toHaveBeenCalled();
+      expect(prisma.uploadTemporaneo.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('2. pulisciUploadTemporaneiScaduti (Garbage Collection)', () => {
@@ -324,6 +409,77 @@ describe('Dominio Uploads e Route Handler /api/uploads (Fase 3 - RF04, VI09)', (
       const data = await res.json();
       expect(data.success).toBe(true);
       expect(data.data.uploadId).toBe('upload-12345');
+    });
+
+    it('RF04: Route Handler accetta video MP4 di durata <= 60 secondi restituendo 200 e durataSecondi', async () => {
+      vi.mocked(getCurrentUser).mockResolvedValue(activeVerifiedUser);
+      vi.mocked(prisma.utente.findUnique).mockResolvedValue({
+        id: activeVerifiedUser.id,
+        stato_account: 'ATTIVO',
+        verificato_il: new Date(),
+      } as unknown as Utente);
+
+      const mp4 = createValidMp4(60.0);
+      const file = new File([new Uint8Array(mp4)], 'video_60s.mp4', { type: 'video/mp4' });
+      const fd = new FormData();
+      fd.set('file', file);
+
+      const mockRecord = {
+        id: 'upload-vid-60',
+        proprietario_id: activeVerifiedUser.id,
+        storage_key: 'uploads/user-123/video.mp4',
+        tipo: 'VIDEO' as const,
+        mime: 'video/mp4',
+        byte_size: mp4.length,
+        durata_secondi: 60,
+        sha256: 'dummy-sha-video',
+        exif_lat: null,
+        exif_lon: null,
+        stato: 'VALIDO',
+        scade_il: new Date(),
+      };
+
+      vi.mocked(mockStorage.putObject).mockResolvedValue(undefined);
+      vi.mocked(prisma.uploadTemporaneo.create).mockResolvedValue(mockRecord as unknown as UploadTemporaneo);
+
+      const req = new NextRequest('http://localhost:3000/api/uploads', {
+        method: 'POST',
+        body: fd,
+      });
+
+      const res = await uploadsHandler(req);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.data.durataSecondi).toBe(60);
+      expect(data.data.tipo).toBe('VIDEO');
+    });
+
+    it('RF04: Route Handler rifiuta video MP4 con durata > 60 secondi restituendo HTTP 400', async () => {
+      vi.mocked(getCurrentUser).mockResolvedValue(activeVerifiedUser);
+      vi.mocked(prisma.utente.findUnique).mockResolvedValue({
+        id: activeVerifiedUser.id,
+        stato_account: 'ATTIVO',
+        verificato_il: new Date(),
+      } as unknown as Utente);
+
+      const mp4_61s = createValidMp4(61.0);
+      const file = new File([new Uint8Array(mp4_61s)], 'video_61s.mp4', { type: 'video/mp4' });
+      const fd = new FormData();
+      fd.set('file', file);
+
+      const req = new NextRequest('http://localhost:3000/api/uploads', {
+        method: 'POST',
+        body: fd,
+      });
+
+      const res = await uploadsHandler(req);
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toContain('supera il limite massimo consentito di 60 secondi');
+      expect(mockStorage.putObject).not.toHaveBeenCalled();
+      expect(prisma.uploadTemporaneo.create).not.toHaveBeenCalled();
     });
   });
 });

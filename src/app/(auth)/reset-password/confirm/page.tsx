@@ -76,7 +76,23 @@ function ResetPasswordConfirmForm() {
             <input
               id="confirm-new-password"
               type="password"
-              name="newPassword"
+              name="password"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              className="form-input text-xs"
+              placeholder="••••••••"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="confirm-verify-password" className="form-label text-xs">
+              Conferma nuova password
+            </label>
+            <input
+              id="confirm-verify-password"
+              type="password"
+              name="confermaPassword"
               required
               minLength={8}
               autoComplete="new-password"

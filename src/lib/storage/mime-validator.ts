@@ -21,17 +21,19 @@ export interface FileValidationResult {
   tipoMedia?: 'FOTO' | 'VIDEO';
   realMime?: string;
   error?: string;
+  durataSecondi?: number;
   exifCoords?: {
     lat: number;
     lon: number;
   };
 }
 
-// Limiti di dimensione stabiliti dalle specifiche di progetto:
+// Limiti di dimensione stabiliti dalle specifiche di progetto (RF04):
 // - Foto: JPEG, PNG, WebP fino a 10 MiB (10 * 1024 * 1024 = 10,485,760 bytes)
-// - Video: MP4 fino a 50 MiB (50 * 1024 * 1024 = 52,428,800 bytes)
+// - Video: MP4 fino a 50 MiB (50 * 1024 * 1024 = 52,428,800 bytes) e durata massima 60 secondi
 export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+export const MAX_VIDEO_DURATION_SECONDS = 60;
 
 export function inspectFileBuffer(buffer: Buffer): FileValidationResult {
   if (!buffer || buffer.length === 0) {
@@ -115,10 +117,29 @@ export function inspectFileBuffer(buffer: Buffer): FileValidationResult {
     if (!mp4Check.valid) {
       return { valid: false, error: mp4Check.error };
     }
+    const durationCheck = extractMp4Duration(buffer);
+    if (!durationCheck.success) {
+      return { valid: false, error: durationCheck.error };
+    }
+    // Controllo del limite di durata massima prima di qualsiasi arrotondamento (RF04)
+    if (durationCheck.durationSeconds > MAX_VIDEO_DURATION_SECONDS) {
+      return {
+        valid: false,
+        error: `La durata del video (${durationCheck.durationSeconds.toFixed(1)} s) supera il limite massimo consentito di ${MAX_VIDEO_DURATION_SECONDS} secondi.`
+      };
+    }
+    const trackCheck = hasMp4VideoTrack(buffer);
+    if (!trackCheck.hasVideoTrack) {
+      return {
+        valid: false,
+        error: trackCheck.error ?? 'File MP4 non valido: traccia video mancante o non rilevabile'
+      };
+    }
     return {
       valid: true,
       tipoMedia: 'VIDEO',
-      realMime: 'video/mp4'
+      realMime: 'video/mp4',
+      durataSecondi: durationCheck.durationSeconds
     };
   }
 
@@ -372,6 +393,7 @@ function validateMp4Structure(buffer: Buffer): { valid: boolean; error?: string 
       }
 
       let actualBoxSize = boxSize;
+      let headerLen = 8;
       if (boxSize === 0) {
         // box runs to end of file
         actualBoxSize = buffer.length - offset;
@@ -383,12 +405,13 @@ function validateMp4Structure(buffer: Buffer): { valid: boolean; error?: string 
         const high = buffer.readUInt32BE(offset + 8);
         const low = buffer.readUInt32BE(offset + 12);
         if (high > 0) {
-          return { valid: false, error: 'File MP4 supera le dimensioni massime gestibili' };
+          return { valid: false, error: 'Dimensione estesa del box MP4 supera il limite massimo consentito (bit alti non nulli)' };
         }
         actualBoxSize = low;
+        headerLen = 16;
       }
 
-      if (offset + actualBoxSize > buffer.length) {
+      if (actualBoxSize < headerLen || offset + actualBoxSize > buffer.length) {
         return { valid: false, error: `File MP4 troncato: il box '${boxType}' eccede la fine del file` };
       }
 
@@ -416,6 +439,315 @@ function validateMp4Structure(buffer: Buffer): { valid: boolean; error?: string 
     return { valid: true };
   } catch {
     return { valid: false, error: 'Errore di parsing strutturale del file MP4' };
+  }
+}
+
+/**
+ * Estrae la durata esatta in secondi da un contenitore MP4 leggendo l'atomo 'mvhd' (Movie Header Box)
+ * annidato all'interno del box 'moov' (ISO/IEC 14496-12).
+ * 
+ * Requisiti RF04:
+ * - Calcolo deterministico server-side dai byte effettivi del file (Zero-Trust verso metadati client).
+ * - Supporto per mvhd versione 0 (32-bit timescale/duration) e versione 1 (64-bit duration).
+ * - Calcolo della durata in secondi in virgola mobile prima di qualsiasi arrotondamento:
+ *   durata_secondi = duration / timescale.
+ * - Rifiuto esplicito se moov o mvhd sono mancanti, corrotti, troncati, o con timescale <= 0 o durata <= 0.
+ */
+export function extractMp4Duration(buffer: Buffer): { success: true; durationSeconds: number } | { success: false; error: string } {
+  try {
+    let offset = 0;
+    let moovFound = false;
+    let iterations = 0;
+    const maxTopIterations = 150;
+
+    while (offset + 8 <= buffer.length && iterations < maxTopIterations) {
+      iterations++;
+      const boxSize = buffer.readUInt32BE(offset);
+      const boxType = buffer.toString('ascii', offset + 4, offset + 8);
+
+      let actualBoxSize = boxSize;
+      let headerLen = 8;
+      if (boxSize === 0) {
+        actualBoxSize = buffer.length - offset;
+      } else if (boxSize === 1) {
+        if (offset + 16 > buffer.length) {
+          return { success: false, error: 'File MP4 troncato nel box a 64-bit' };
+        }
+        const high = buffer.readUInt32BE(offset + 8);
+        const low = buffer.readUInt32BE(offset + 12);
+        if (high > 0) {
+          return { success: false, error: 'Dimensione estesa del box MP4 supera il limite massimo consentito (bit alti non nulli)' };
+        }
+        actualBoxSize = low;
+        headerLen = 16;
+      }
+
+      if (actualBoxSize < headerLen || offset + actualBoxSize > buffer.length) {
+        return { success: false, error: `File MP4 corrotto o troncato: box '${boxType}' fuori dai limiti del file` };
+      }
+
+      if (boxType === 'moov') {
+        moovFound = true;
+        const moovEnd = offset + actualBoxSize;
+        let subOffset = offset + headerLen;
+        let subIterations = 0;
+        const maxSubIterations = 150;
+
+        while (subOffset + 8 <= moovEnd && subIterations < maxSubIterations) {
+          subIterations++;
+          const subSize = buffer.readUInt32BE(subOffset);
+          const subType = buffer.toString('ascii', subOffset + 4, subOffset + 8);
+
+          let actualSubSize = subSize;
+          let subHeaderLen = 8;
+          if (subSize === 0) {
+            actualSubSize = moovEnd - subOffset;
+          } else if (subSize === 1) {
+            if (subOffset + 16 > moovEnd) {
+              return { success: false, error: 'Box annidato in moov troncato a 64-bit' };
+            }
+            const subHigh = buffer.readUInt32BE(subOffset + 8);
+            const subLow = buffer.readUInt32BE(subOffset + 12);
+            if (subHigh > 0) {
+              return { success: false, error: 'Dimensione estesa del box annidato in moov non valida (bit alti non nulli)' };
+            }
+            actualSubSize = subLow;
+            subHeaderLen = 16;
+          }
+
+          if (actualSubSize < subHeaderLen || subOffset + actualSubSize > moovEnd) {
+            return { success: false, error: `Box '${subType}' annidato in moov non valido o troncato` };
+          }
+
+          if (subType === 'mvhd') {
+            const mvhdPayload = subOffset + subHeaderLen;
+            if (mvhdPayload + 4 > moovEnd) {
+              return { success: false, error: 'Box mvhd privo di versione e flag' };
+            }
+
+            const version = buffer.readUInt8(mvhdPayload);
+            let timescale: number;
+            let duration: number;
+
+            if (version === 0) {
+              // Version 0: 1 byte version + 3 flags + 4 create + 4 mod + 4 timescale + 4 duration = 20 bytes payload
+              if (mvhdPayload + 20 > moovEnd) {
+                return { success: false, error: 'Box mvhd (v0) troncato: campi durata/timescale non leggibili' };
+              }
+              timescale = buffer.readUInt32BE(mvhdPayload + 12);
+              duration = buffer.readUInt32BE(mvhdPayload + 16);
+            } else if (version === 1) {
+              // Version 1: 1 byte version + 3 flags + 8 create + 8 mod + 4 timescale + 8 duration = 32 bytes payload
+              if (mvhdPayload + 32 > moovEnd) {
+                return { success: false, error: 'Box mvhd (v1) troncato: campi durata/timescale non leggibili' };
+              }
+              timescale = buffer.readUInt32BE(mvhdPayload + 20);
+              const durationBig = buffer.readBigUInt64BE(mvhdPayload + 24);
+              duration = Number(durationBig);
+            } else {
+              return { success: false, error: `Versione mvhd (${version}) non supportata o non standard` };
+            }
+
+            if (!timescale || timescale <= 0) {
+              return { success: false, error: 'Durata del video non valida: timescale mancante o nullo' };
+            }
+            if (duration === undefined || duration === null || duration <= 0 || !Number.isFinite(duration)) {
+              return { success: false, error: 'Durata del video non valida o non misurabile (durata nulla o zero)' };
+            }
+
+            const durationSeconds = duration / timescale;
+            if (!Number.isFinite(durationSeconds) || isNaN(durationSeconds) || durationSeconds <= 0) {
+              return { success: false, error: 'Durata del video non valida o non quantificabile' };
+            }
+
+            return { success: true, durationSeconds };
+          }
+
+          subOffset += actualSubSize;
+        }
+
+        return { success: false, error: 'Durata del video non leggibile: box mvhd mancante nei metadati moov' };
+      }
+
+      offset += actualBoxSize;
+    }
+
+    if (!moovFound) {
+      return { success: false, error: 'Durata del video non leggibile: box moov mancante nel container MP4' };
+    }
+
+    return { success: false, error: 'Impossibile determinare la durata del video MP4' };
+  } catch {
+    return { success: false, error: 'Errore di parsing dei metadati temporali del file MP4' };
+  }
+}
+
+/**
+ * Scansione strutturale delle tracce MP4 (ISO/IEC 14496-12):
+ * Verifica la presenza di almeno una traccia visiva (box 'trak' -> 'mdia' -> 'hdlr' con handler_type 'vide').
+ * Rifiuta file privi di tracce (es. solo intestazioni ftyp/moov/mvhd) o file audio-only rinominati (es. solo 'soun'),
+ * senza introdurre transcodifica o decodifica pesante del bitstream.
+ */
+export function hasMp4VideoTrack(buffer: Buffer): { hasVideoTrack: boolean; error?: string } {
+  try {
+    let offset = 0;
+    let moovFound = false;
+    let iterations = 0;
+    const maxTopIterations = 150;
+
+    while (offset + 8 <= buffer.length && iterations < maxTopIterations) {
+      iterations++;
+      const boxSize = buffer.readUInt32BE(offset);
+      const boxType = buffer.toString('ascii', offset + 4, offset + 8);
+
+      let actualBoxSize = boxSize;
+      let headerLen = 8;
+      if (boxSize === 0) {
+        actualBoxSize = buffer.length - offset;
+      } else if (boxSize === 1) {
+        if (offset + 16 > buffer.length) {
+          return { hasVideoTrack: false, error: 'File MP4 troncato nel box a 64-bit' };
+        }
+        const high = buffer.readUInt32BE(offset + 8);
+        const low = buffer.readUInt32BE(offset + 12);
+        if (high > 0) {
+          return { hasVideoTrack: false, error: 'Dimensione estesa del box MP4 supera il limite massimo consentito (bit alti non nulli)' };
+        }
+        actualBoxSize = low;
+        headerLen = 16;
+      }
+
+      if (actualBoxSize < headerLen || offset + actualBoxSize > buffer.length) {
+        return { hasVideoTrack: false, error: `File MP4 corrotto: box '${boxType}' fuori dai limiti del file` };
+      }
+
+      if (boxType === 'moov') {
+        moovFound = true;
+        const moovEnd = offset + actualBoxSize;
+        let subOffset = offset + headerLen;
+        let subIterations = 0;
+        let foundAnyTrak = false;
+
+        while (subOffset + 8 <= moovEnd && subIterations < 150) {
+          subIterations++;
+          const subSize = buffer.readUInt32BE(subOffset);
+          const subType = buffer.toString('ascii', subOffset + 4, subOffset + 8);
+
+          let actualSubSize = subSize;
+          let subHeaderLen = 8;
+          if (subSize === 0) {
+            actualSubSize = moovEnd - subOffset;
+          } else if (subSize === 1) {
+            if (subOffset + 16 > moovEnd) {
+              return { hasVideoTrack: false, error: 'Box a 64-bit troncato in moov' };
+            }
+            const subHigh = buffer.readUInt32BE(subOffset + 8);
+            const subLow = buffer.readUInt32BE(subOffset + 12);
+            if (subHigh > 0) {
+              return { hasVideoTrack: false, error: 'Dimensione estesa del box in moov non valida (bit alti non nulli)' };
+            }
+            actualSubSize = subLow;
+            subHeaderLen = 16;
+          }
+
+          if (actualSubSize < subHeaderLen || subOffset + actualSubSize > moovEnd) {
+            return { hasVideoTrack: false, error: `Box '${subType}' in moov non valido o troncato` };
+          }
+
+          if (subType === 'trak') {
+            foundAnyTrak = true;
+            const trakEnd = subOffset + actualSubSize;
+            let trakChildOffset = subOffset + subHeaderLen;
+            let trakIterations = 0;
+
+            while (trakChildOffset + 8 <= trakEnd && trakIterations < 100) {
+              trakIterations++;
+              const tSize = buffer.readUInt32BE(trakChildOffset);
+              const tType = buffer.toString('ascii', trakChildOffset + 4, trakChildOffset + 8);
+
+              let actualTSize = tSize;
+              let tHeaderLen = 8;
+              if (tSize === 0) actualTSize = trakEnd - trakChildOffset;
+              else if (tSize === 1) {
+                if (trakChildOffset + 16 > trakEnd) break;
+                const tHigh = buffer.readUInt32BE(trakChildOffset + 8);
+                const tLow = buffer.readUInt32BE(trakChildOffset + 12);
+                if (tHigh > 0) {
+                  return { hasVideoTrack: false, error: 'Dimensione estesa del box in trak non valida (bit alti non nulli)' };
+                }
+                actualTSize = tLow;
+                tHeaderLen = 16;
+              }
+
+              if (actualTSize < tHeaderLen || trakChildOffset + actualTSize > trakEnd) break;
+
+              if (tType === 'mdia') {
+                const mdiaEnd = trakChildOffset + actualTSize;
+                let mdiaChildOffset = trakChildOffset + tHeaderLen;
+                let mdiaIterations = 0;
+
+                while (mdiaChildOffset + 8 <= mdiaEnd && mdiaIterations < 50) {
+                  mdiaIterations++;
+                  const mSize = buffer.readUInt32BE(mdiaChildOffset);
+                  const mType = buffer.toString('ascii', mdiaChildOffset + 4, mdiaChildOffset + 8);
+
+                  let actualMSize = mSize;
+                  let mHeaderLen = 8;
+                  if (mSize === 0) actualMSize = mdiaEnd - mdiaChildOffset;
+                  else if (mSize === 1) {
+                    if (mdiaChildOffset + 16 > mdiaEnd) break;
+                    const mHigh = buffer.readUInt32BE(mdiaChildOffset + 8);
+                    const mLow = buffer.readUInt32BE(mdiaChildOffset + 12);
+                    if (mHigh > 0) {
+                      return { hasVideoTrack: false, error: 'Dimensione estesa del box in mdia non valida (bit alti non nulli)' };
+                    }
+                    actualMSize = mLow;
+                    mHeaderLen = 16;
+                  }
+
+                  if (actualMSize < mHeaderLen || mdiaChildOffset + actualMSize > mdiaEnd) break;
+
+                  if (mType === 'hdlr') {
+                    const hdlrEnd = mdiaChildOffset + actualMSize;
+                    const hdlrPayload = mdiaChildOffset + mHeaderLen;
+                    // I 12 byte necessari (1 v + 3 flags + 4 predefined + 4 handler_type) devono
+                    // essere contenuti nel box hdlr stesso (hdlrEnd), non solo nel contenitore padre mdiaEnd.
+                    if (hdlrPayload + 12 <= hdlrEnd) {
+                      const handlerType = buffer.toString('ascii', hdlrPayload + 8, hdlrPayload + 12);
+                      if (handlerType === 'vide') {
+                        return { hasVideoTrack: true };
+                      }
+                    }
+                  }
+
+                  mdiaChildOffset += actualMSize;
+                }
+              }
+
+              trakChildOffset += actualTSize;
+            }
+          }
+
+          subOffset += actualSubSize;
+        }
+
+        if (!foundAnyTrak) {
+          return { hasVideoTrack: false, error: 'File MP4 privo di tracce multimediali (nessun box trak presente nel container)' };
+        }
+
+        return { hasVideoTrack: false, error: "File MP4 privo di traccia video: nessun flusso con handler 'vide' trovato nelle tracce" };
+      }
+
+      offset += actualBoxSize;
+    }
+
+    if (!moovFound) {
+      return { hasVideoTrack: false, error: 'File MP4 privo di metadati moov' };
+    }
+
+    return { hasVideoTrack: false, error: 'Traccia video non rilevata nel file MP4' };
+  } catch {
+    return { hasVideoTrack: false, error: 'Errore durante la scansione delle tracce del file MP4' };
   }
 }
 

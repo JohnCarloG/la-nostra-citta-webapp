@@ -11,6 +11,7 @@ export interface UploadResult {
   tipo: 'FOTO' | 'VIDEO';
   mime: string;
   byteSize: number;
+  durataSecondi?: number;
   sha256: string;
   exifCoords?: {
     lat: number;
@@ -131,6 +132,7 @@ export async function caricaUploadTemporaneo(
         mime: inspection.realMime,
         byte_size: byteSize,
         sha256: sha256,
+        durata_secondi: inspection.durataSecondi !== undefined ? Math.round(inspection.durataSecondi) : null,
         exif_lat: inspection.exifCoords?.lat,
         exif_lon: inspection.exifCoords?.lon,
         stato: 'VALIDO',
@@ -144,6 +146,7 @@ export async function caricaUploadTemporaneo(
       tipo: record.tipo,
       mime: record.mime,
       byteSize: record.byte_size,
+      durataSecondi: record.durata_secondi ?? undefined,
       sha256: record.sha256,
       exifCoords: inspection.exifCoords,
       scadeIl: record.scade_il

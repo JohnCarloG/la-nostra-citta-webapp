@@ -211,7 +211,19 @@ describe('Unit Tests: RF08 — Classificazione Automatica in Categorie', () => {
       descrizione: 'Segnalazione senza parole chiave evidenti per categorie specifiche',
       stato_moderazione: 'PENDENTE',
       stato_avanzamento: 'RICEVUTA',
-      media: []
+      media: [
+        {
+          id: 'med-class-101',
+          segnalazione_id: 'seg-101',
+          storage_key: 'uploads/user/class101.jpg',
+          tipo: 'FOTO',
+          mime: 'image/jpeg',
+          byte_size: 1024,
+          sha256: 'sha256_mock_class101',
+          stato_file: 'READY',
+          creato_il: new Date()
+        }
+      ]
     });
 
     mockPrisma.categoria.findMany.mockResolvedValue(allowedCategories);
@@ -251,7 +263,7 @@ describe('Unit Tests: RF08 — Classificazione Automatica in Categorie', () => {
       moderation: new DeterministicMockModerationAdapter(),
       metadata: new DeterministicMockMetadataAdapter(),
       coherence: new DeterministicMockCoherenceAdapter()
-    });
+    }, { allowSimulatedApproval: true });
 
     expect(result.status).toBe('COMPLETED');
     expect(result.finalState).toBe('APPROVATA');
@@ -275,7 +287,19 @@ describe('Unit Tests: RF08 — Classificazione Automatica in Categorie', () => {
       descrizione: 'Segnalazione con classificatore offline',
       stato_moderazione: 'PENDENTE',
       stato_avanzamento: 'RICEVUTA',
-      media: []
+      media: [
+        {
+          id: 'med-class-102',
+          segnalazione_id: 'seg-102',
+          storage_key: 'uploads/user/class102.jpg',
+          tipo: 'FOTO',
+          mime: 'image/jpeg',
+          byte_size: 1024,
+          sha256: 'sha256_mock_class102',
+          stato_file: 'READY',
+          creato_il: new Date()
+        }
+      ]
     });
 
     mockPrisma.categoria.findMany.mockResolvedValue(allowedCategories);
@@ -315,7 +339,7 @@ describe('Unit Tests: RF08 — Classificazione Automatica in Categorie', () => {
       moderation: new DeterministicMockModerationAdapter(),
       metadata: new DeterministicMockMetadataAdapter(),
       coherence: new DeterministicMockCoherenceAdapter()
-    });
+    }, { allowSimulatedApproval: true });
 
     // L'indisponibilità del solo classificatore NON blocca l'approvazione del report se la moderazione è conforme
     expect(result.status).toBe('COMPLETED');

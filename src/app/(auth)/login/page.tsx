@@ -1,9 +1,20 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, Suspense } from 'react';
 import { loginAction } from '@/actions/auth';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+
+function LoginMessageAlert() {
+  const searchParams = useSearchParams();
+  const message = searchParams.get('message');
+  if (!message) return null;
+  return (
+    <div className="alert alert-success mb-4" role="status">
+      <p className="text-xs">{message}</p>
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,6 +38,10 @@ export default function LoginPage() {
             Accedi con le tue credenziali civiche per inviare segnalazioni e sostenere le priorità.
           </p>
         </div>
+
+        <Suspense fallback={null}>
+          <LoginMessageAlert />
+        </Suspense>
 
         {state?.error && (
           <div className="alert alert-error mb-4" role="alert">

@@ -393,6 +393,110 @@ export async function eseguiResetPassword(tokenInChiaro: string, nuovaPassword: 
 }
 
 /**
+ * Errore di dominio controllato per le operazioni di autenticazione e sicurezza account.
+ * I messaggi di queste eccezioni sono sicuri per essere mostrati all'utente.
+ */
+export class AuthDomainError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthDomainError';
+  }
+}
+
+/**
+ * Cambio Password per Utente Autenticato
+ * Identifica l'utente tramite utenteId estratto esclusivamente dalla sessione verificata.
+ * Verifica la password attuale, valida che la nuova password rispetti i criteri e sia diversa dall'attuale.
+ * Esegue un aggiornamento atomico con controllo di concorrenza ottimistica: aggiorna l'hash solo se
+ * l'hash coincide ancora con quello appena verificato e l'account è ancora attivo e verificato.
+ * Solo se l'update ha successo (count === 1) revoca tutte le sessioni attive e invalida eventuali
+ * token di reset pendenti all'interno della stessa transazione.
+ */
+export async function cambiaPasswordAutenticato(
+  utenteId: string,
+  passwordAttuale: string,
+  nuovaPassword: string,
+  confermaPassword: string
+): Promise<{ success: boolean }> {
+  if (!utenteId?.trim()) {
+    throw new AuthDomainError('Utente non autenticato');
+  }
+
+  if (!passwordAttuale || !nuovaPassword || !confermaPassword) {
+    throw new AuthDomainError('Tutti i campi sono obbligatori');
+  }
+
+  if (nuovaPassword !== confermaPassword) {
+    throw new AuthDomainError('La nuova password e la conferma non coincidono');
+  }
+
+  if (nuovaPassword.length < 8) {
+    throw new AuthDomainError('La nuova password deve contenere almeno 8 caratteri');
+  }
+
+  const utente = await prisma.utente.findUnique({
+    where: { id: utenteId },
+    select: {
+      id: true,
+      password_hash: true,
+      stato_account: true,
+      verificato_il: true
+    }
+  });
+
+  if (!utente || utente.stato_account !== 'ATTIVO' || !utente.verificato_il) {
+    throw new AuthDomainError('Account non valido o non autorizzato');
+  }
+
+  const isCurrentValid = await verifyPassword(passwordAttuale, utente.password_hash);
+  if (!isCurrentValid) {
+    throw new AuthDomainError('Password attuale non corretta');
+  }
+
+  const isSamePassword = await verifyPassword(nuovaPassword, utente.password_hash);
+  if (isSamePassword) {
+    throw new AuthDomainError('La nuova password deve essere diversa da quella attuale');
+  }
+
+  const nuovoHash = await hashPassword(nuovaPassword);
+
+  await prisma.$transaction(async (tx) => {
+    // 1. Aggiorna password hash SOLO se l'utente ha ancora l'hash appena verificato ed è ancora attivo e verificato
+    const updateRes = await tx.utente.updateMany({
+      where: {
+        id: utente.id,
+        password_hash: utente.password_hash,
+        stato_account: 'ATTIVO',
+        verificato_il: { not: null }
+      },
+      data: {
+        password_hash: nuovoHash
+      }
+    });
+
+    if (updateRes.count !== 1) {
+      throw new AuthDomainError(
+        'La password o lo stato dell\'account sono stati modificati nel frattempo. Riprova.'
+      );
+    }
+
+    // 2. Revoca tutte le sessioni attive per questo utente (solo la richiesta vincente)
+    await tx.sessione.updateMany({
+      where: { utente_id: utente.id, revocata_il: null },
+      data: { revocata_il: new Date() }
+    });
+
+    // 3. Invalida tutti i token di reset password ancora pendenti
+    await tx.tokenAccount.updateMany({
+      where: { utente_id: utente.id, tipo: 'RESET_PASSWORD', usato_il: null },
+      data: { usato_il: new Date() }
+    });
+  });
+
+  return { success: true };
+}
+
+/**
  * Validazione Sessione (Centralizzata, da usare nei Server Components / API)
  */
 export async function getSessionUtente(sessionTokenInChiaro: string) {

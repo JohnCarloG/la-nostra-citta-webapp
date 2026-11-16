@@ -21,7 +21,9 @@ const m = vi.hoisted(() => ({
 vi.mock('../../src/lib/db', () => ({ prisma: m.db }));
 vi.mock('../../src/lib/storage', () => ({ getStorageProvider: () => m.storage }));
 vi.mock('../../src/actions/auth', () => ({ getCurrentUser: m.auth }));
-import { uploadMediaAction, submitSegnalazioneAction } from '../../src/actions/uploads';
+import { submitSegnalazioneAction } from '../../src/actions/uploads';
+import { POST as uploadMedia } from '../../src/app/api/uploads/route';
+import type { UploadResult } from '../../src/lib/domain/uploads';
 import { modificaSegnalazione, getSegnalazioniMappa, isSegnalazionePubblica } from '../../src/lib/domain/segnalazioni';
 import { processSingleOutboxJob } from '../../src/lib/ia/worker';
 import { GET as readMedia } from '../../src/app/api/media/[id]/route';
@@ -74,7 +76,9 @@ describe('RF07–RF10: invio reale delle action, worker e visibilità; DB/storag
 
   async function submit(bytes: Buffer, manual = false) {
     const form = new FormData(); form.set('file', new File([new Uint8Array(bytes)], 'synthetic.jpg', { type: 'image/jpeg' }));
-    const result = await uploadMediaAction(form);
+    const uploadResponse = await uploadMedia(new NextRequest('http://localhost/api/uploads', { method: 'POST', body: form }));
+    expect(uploadResponse.status).toBe(200);
+    const result = await uploadResponse.json() as { success: boolean; data?: Pick<UploadResult, 'exifCoords' | 'storageKey'> };
     expect(result.success).toBe(true);
     const coords = result.data?.exifCoords;
     const selected = manual ? impostaPosizioneManuale(STATO_INIZIALE_LUOGO, 45.47, 9.2).nuovoStato

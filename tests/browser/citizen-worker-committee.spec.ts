@@ -12,7 +12,7 @@ const recipe = 'Ricetta sintetica: mescola farina e uova per preparare una torta
 const ambiguous = 'Foto ambigua sintetica: segnalo rifiuti vicino al marciapiede, ma la foto non consente di confermare il luogo.';
 const humanReason = 'Verifica manuale sintetica completata: il collegamento con la segnalazione è confermato.';
 
-test('cittadino → worker reale con solo HTTP Gemini simulato → comitato → visitatore', async ({ browser }) => {
+test('cittadino → worker reale con solo HTTP Gemini simulato → comitato → visitatore', async ({ browser }, testInfo) => {
   assertIsolatedBrowserDatabase();
   const prisma = new PrismaClient();
   const contexts: BrowserContext[] = [];
@@ -63,6 +63,7 @@ test('cittadino → worker reale con solo HTTP Gemini simulato → comitato → 
     expect((await prisma.segnalazione.findUniqueOrThrow({ where: { id: first.id } })).stato_moderazione).toBe('APPROVATA');
     await visitor.goto(`/segnalazioni/${first.id}`); await expect(visitor.getByRole('heading', { level: 1 })).toContainText('Segnalazione civica sintetica');
     expect((await visitor.context().request.get(`http://localhost:3100/api/media/${first.media[0].id}`)).status()).toBe(200);
+    await visitor.goto('/segnalazioni'); await expect(visitor.locator('main')).toContainText('Segnalazione civica sintetica');
     await visitor.goto('/mappa'); await expect(visitor.locator('main')).toContainText('45.4701, 9.2012');
     await expect(visitor.locator('iframe')).toHaveAttribute('src', /marker=45\.4701%2C9\.2012/);
     await screenshot(visitor, '02-mappa-posizione-corretta');
@@ -75,7 +76,17 @@ test('cittadino → worker reale con solo HTTP Gemini simulato → comitato → 
       await expect(suggestions).toContainText('Rifiuti e igiene urbana'); await expect(suggestions).toContainText('da confermare');
     }
     expect(await prisma.segnalazioneCategoria.count({ where: { segnalazione_id: first.id } })).toBe(0);
-    evidence.push({ action: 'Suggerimenti IA per autore e comitato', expected: 'Due proposte distinte dalle confermate', observed: 'Entrambi vedono la sezione da confermare; zero associazioni confermate nel DB reale', evidence: 'Dettaglio autorizzato e conteggio SegnalazioneCategoria' });
+    await committee.getByText('Modifica categorie', { exact: true }).click();
+    await committee.getByRole('checkbox', { name: 'Strade, buche e marciapiedi', exact: true }).check();
+    await committee.getByRole('button', { name: 'Conferma categorie', exact: true }).click();
+    await expect(committee.getByText('Categorie confermate e aggiornate con successo.', { exact: true })).toBeVisible();
+    await expect.poll(() => prisma.segnalazioneCategoria.count({ where: { segnalazione_id: first.id } })).toBe(1);
+    for (const page of [citizen, committee]) {
+      await page.goto(`/segnalazioni/${first.id}`);
+      await expect(page.locator('article .badge-categoria')).toHaveText('Strade, buche e marciapiedi');
+      await expect(page.getByRole('region', { name: 'Categorie suggerite dall’IA' })).toContainText('Rifiuti e igiene urbana');
+    }
+    evidence.push({ action: 'Suggerimenti IA e conferma umana', expected: 'Due proposte distinte dalla categoria confermata', observed: 'Entrambi vedono due suggerimenti; il comitato conferma solo Strade dalla UI e il badge confermato resta distinto', evidence: 'Dettaglio autore/comitato e 1 associazione confermata nel DB reale' });
     const rejected = await submit(citizen, recipe); await worker();
     expect((await prisma.segnalazione.findUniqueOrThrow({ where: { id: rejected.id } })).stato_moderazione).toBe('RIFIUTATA');
     expect(await prisma.eventoStato.count({ where: { segnalazione_id: rejected.id, tipo_attore: 'UTENTE', ambito: 'MODERAZIONE' } })).toBe(0);
@@ -122,6 +133,9 @@ test('cittadino → worker reale con solo HTTP Gemini simulato → comitato → 
   } finally {
     await fs.mkdir('browser-evidence', { recursive: true });
     await fs.writeFile('browser-evidence/observations.json', JSON.stringify(evidence, null, 2));
+    for (const name of (await fs.readdir('browser-evidence')).filter(name => name.endsWith('.png'))) {
+      await testInfo.attach(name, { path: path.join('browser-evidence', name), contentType: 'image/png' });
+    }
     await Promise.all(contexts.map(c => c.close())); await prisma.$disconnect();
   }
 });

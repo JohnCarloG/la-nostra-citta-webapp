@@ -67,7 +67,8 @@ test('cittadino → worker reale con solo HTTP Gemini simulato → comitato → 
     await visitor.goto('/mappa'); await expect(visitor.locator('main')).toContainText('45.4701, 9.2012');
     await expect(visitor.locator('iframe')).toHaveAttribute('src', /marker=45\.4701%2C9\.2012/);
     try {
-      await expect(visitor.frameLocator('iframe').locator('.leaflet-marker-icon')).toBeVisible({ timeout: 30_000 });
+      // OpenStreetMap's real embed now uses MapLibre, not the app's Leaflet location picker.
+      await expect(visitor.frameLocator('iframe').locator('.maplibregl-marker, .maplibre-gl-marker')).toBeVisible({ timeout: 30_000 });
     } catch (error) {
       const frame = visitor.frames().find(frame => frame.url().includes('openstreetmap.org/export/embed'));
       const diagnostic = { url: frame?.url(), title: await frame?.title().catch(() => 'unavailable'),

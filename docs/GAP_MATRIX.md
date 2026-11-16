@@ -5,6 +5,16 @@ Traccia punto a punto la corrispondenza tra i requisiti formali della traccia or
 
 ---
 
+## Aggiornamento: collaudo browser con MySQL temporaneo
+
+Il [collaudo browser cittadino → worker → comitato](BROWSER_COLLAUDO.md) aggiunge
+alle prove offline qui sotto un percorso con app compilata, Chromium, MySQL e
+storage reali isolati, simulando solo HTTP Gemini. La guida riporta run/SHA,
+azione, risultato atteso/osservato, cinque screenshot e limiti delle evidenze.
+Le note «browser non eseguito» nei precedenti audit restano riferite a quegli
+audit storici; non sostituiscono l’esito della nuova run. La qualità del modello
+Gemini resta non collaudata.
+
 ## Punto 3 del docente — audit del percorso cloud
 
 Baseline ispezionata: `6cf3bc30ca915d0001873e5ea51ba5d04298e4b6`, branch

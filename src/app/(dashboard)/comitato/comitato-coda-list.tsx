@@ -85,6 +85,7 @@ export default function ComitatoCodaList({
       {coda.map((seg) => {
         const isOpen = currentOpenId === seg.id;
         const panelId = `coda-panel-${seg.id}`;
+        const moderationEvent = seg.eventi_stato.find(event => event.ambito === 'MODERAZIONE' && event.revisione === seg.revisione);
 
         return (
           <div
@@ -118,6 +119,9 @@ export default function ComitatoCodaList({
             </div>
 
             {/* CASO A: SCHEDA CHIUSA */}
+            {seg.stato_moderazione === 'IN_REVISIONE' && moderationEvent && (
+              <p className="text-sm text-[var(--text-secondary)]"><strong>Da verificare: </strong>{moderationEvent.motivazione}</p>
+            )}
             {!isOpen && (
               <>
                 {/* Su mobile e desktop: foto della segnalazione prima dei pulsanti */}

@@ -517,11 +517,11 @@ export default function LuogoPicker({
 
       {/* VISTA 2: Alternativa Testuale e Inserimento Manuale */}
       {activeTab === 'manual' && (
-        <form
+        <div
           id="panel-luogo-manuale"
           role="tabpanel"
           aria-labelledby="tab-luogo-manuale"
-          onSubmit={handleApplyManualCoords}
+          onKeyDown={event => { if (event.key === 'Enter') handleApplyManualCoords(event); }}
           className="flex flex-col gap-3 bg-white p-3 rounded-[var(--radius-md)] border border-[var(--border-light)]"
         >
           <p className="text-xs text-[var(--text-secondary)]">
@@ -582,11 +582,11 @@ export default function LuogoPicker({
           </div>
 
           <div className="flex justify-end pt-1">
-            <button type="submit" className="btn btn-primary btn-sm">
+            <button type="button" onClick={handleApplyManualCoords} className="btn btn-primary btn-sm">
               Applica e conferma coordinate
             </button>
           </div>
-        </form>
+        </div>
       )}
 
       {/* RIEPILOGO DEL LUOGO SELEZIONATO E CONFERMA ESPLICITA */}

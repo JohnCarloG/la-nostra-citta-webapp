@@ -1,7 +1,20 @@
 /** Server runtime only: never import into client components. No SDK or browser key. */
 export const CLOUD_POLICY_VERSION = 'civic-gemini-v1';
-// Current official cookbook default; availability/language verification on ai.google.dev remains a release prerequisite.
-export const DEFAULT_GEMINI_MODEL = 'gemini-4-hydrogen';
+export const CLOUD_CLASSIFICATION_VERSION = 'civic-categories-v1';
+export interface CloudCategory { id: string; codice: string; nome: string }
+export interface CloudClassification { categoryIds: string[]; discardedIds: number }
+export class CloudConfigurationError extends Error {
+  constructor(code: 'MISSING_MODEL' | 'INVALID_MODEL' | 'MISSING_KEY' | 'INVALID_MODE') {
+    const messages = {
+      MISSING_MODEL: 'Configurazione cloud mancante: GEMINI_MODEL è obbligatorio; scegliere un ID verificato nel catalogo ufficiale Google.',
+      INVALID_MODEL: 'Configurazione cloud non valida: GEMINI_MODEL deve contenere un ID modello, senza URL o percorsi.',
+      MISSING_KEY: 'Configurazione cloud mancante: GEMINI_API_KEY deve essere configurata solo lato server.',
+      INVALID_MODE: 'Il worker cloud richiede AI_ADAPTER_MODE=cloud.'
+    };
+    super(messages[code]);
+    this.name = 'CloudConfigurationError';
+  }
+}
 
 export const REASONS = ['SAFE', 'CIVIC', 'OFF_TOPIC', 'THREATS', 'HARASSMENT', 'HATE', 'SPAM', 'PERSONAL_DATA', 'EXPLICIT', 'UNCLEAR'] as const;
 export type Reason = typeof REASONS[number];
@@ -38,6 +51,9 @@ Immagine: valuta indipendentemente coerenza con l'intera descrizione e idoneità
 FAIL solo per violazione chiara, OFF_TOPIC certo o incompatibilità certa. Ogni dubbio usa UNCERTAIN/UNCLEAR. PASS solo se il controllo è superato. Motivi ammessi: pertinenza PASS/CIVIC, FAIL/OFF_TOPIC, UNCERTAIN/UNCLEAR; community e pubblicabilità PASS/SAFE, UNCERTAIN/UNCLEAR oppure FAIL con THREATS, HARASSMENT, HATE, SPAM, PERSONAL_DATA, EXPLICIT.
 Non restituire testo libero, citazioni, dati personali o identificativi: solo i codici dello schema richiesto.`;
 
+const CLASSIFICATION_INSTRUCTION = `${CLOUD_SYSTEM_INSTRUCTION}
+Per il task CLASSIFY, classifica tematicamente l'intera descrizione usando esclusivamente il catalogo allowed_categories fornito. Seleziona tutte le categorie pertinenti, anche più di una; non inventare ID o categorie. Restituisci category_ids vuoto solo se nessuna categoria è pertinente. La pertinenza civica non sostituisce questa classificazione. Non confermare o modificare scelte umane: stai proponendo suggerimenti, senza decidere la pubblicazione.`;
+
 function record(value: unknown, keys: string[]): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       Object.keys(value).sort().join(',') !== [...keys].sort().join(',')) throw new Error('INVALID_RESPONSE');
@@ -57,13 +73,15 @@ export class GeminiClient {
   readonly model: string;
   constructor(private config: { apiKey?: string; model?: string; fetch?: typeof fetch } = {}) {
     if (typeof window !== 'undefined') throw new Error('SERVER_ONLY');
-    this.model = config.model ?? process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(this.model)) throw new Error('INVALID_MODEL');
+    const model = config.model ?? process.env.GEMINI_MODEL;
+    if (!model?.trim()) throw new CloudConfigurationError('MISSING_MODEL');
+    this.model = model;
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(this.model)) throw new CloudConfigurationError('INVALID_MODEL');
   }
 
-  private async generate(text: string, schema: object, timeoutMs: number, image?: Buffer): Promise<unknown> {
+  private async generate(text: string, schema: object, timeoutMs: number, image?: Buffer, instruction = CLOUD_SYSTEM_INSTRUCTION): Promise<unknown> {
     const apiKey = this.config.apiKey ?? process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('MISSING_KEY');
+    if (!apiKey) throw new CloudConfigurationError('MISSING_KEY');
     const parts: Array<object> = [{ text }];
     if (image) parts.push({ inlineData: { mimeType: 'image/png', data: image.toString('base64') } });
     // Fixed official destination, key in header, never in a URL or provider error log.
@@ -72,7 +90,7 @@ export class GeminiClient {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: CLOUD_SYSTEM_INSTRUCTION }] },
+          systemInstruction: { parts: [{ text: instruction }] },
           contents: [{ role: 'user', parts }],
           generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, maxOutputTokens: 32768 }
         })
@@ -97,4 +115,25 @@ export class GeminiClient {
     if (!['CONSISTENT', 'UNCERTAIN', 'INCONSISTENT'].includes(String(v.coherence))) throw new Error('INVALID_RESPONSE');
     return { coherence: v.coherence as ImageAssessment['coherence'], publication: check(v.publication) };
   }
+
+  async classify(description: string, categories: CloudCategory[], timeoutMs: number): Promise<CloudClassification> {
+    if (!categories.length) throw new Error('EMPTY_CATALOG');
+    const allowed = new Set(categories.map(c => c.id));
+    const schema = {
+      type: 'object', additionalProperties: false,
+      properties: { category_ids: { type: 'array', items: { type: 'string', enum: [...allowed] }, maxItems: allowed.size } },
+      required: ['category_ids']
+    };
+    const v = record(await this.generate(JSON.stringify({ task: 'CLASSIFY', description, allowed_categories: categories }), schema, timeoutMs, undefined, CLASSIFICATION_INSTRUCTION), ['category_ids']);
+    if (!Array.isArray(v.category_ids) || v.category_ids.some(id => typeof id !== 'string')) throw new Error('INVALID_RESPONSE');
+    const ids = [...new Set(v.category_ids as string[])];
+    return { categoryIds: ids.filter(id => allowed.has(id)), discardedIds: ids.filter(id => !allowed.has(id)).length };
+  }
+}
+
+/** Preflight only: no DB imports, worker jobs, or HTTP requests. */
+export function validateCloudWorkerConfiguration(): void {
+  if (process.env.AI_ADAPTER_MODE !== 'cloud') throw new CloudConfigurationError('INVALID_MODE');
+  new GeminiClient();
+  if (!process.env.GEMINI_API_KEY) throw new CloudConfigurationError('MISSING_KEY');
 }

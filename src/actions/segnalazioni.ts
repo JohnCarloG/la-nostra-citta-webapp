@@ -8,9 +8,31 @@ import {
   ritiraSegnalazione,
   moderaSegnalazione,
   avanzaStatoSegnalazione,
-  aggiornaCategorieSegnalazione
+  aggiornaCategorieSegnalazione,
+  modificaSegnalazione
 } from '@/lib/domain/segnalazioni';
 import { ConcurrencyConflictError, ForbiddenError, NotFoundError, ValidationError } from '@/lib/domain/errors';
+
+export async function modificaSegnalazioneAction(formData: FormData) {
+  const user = await getCurrentUser();
+  if (!user || user.stato_account !== 'ATTIVO' || !user.verificato_il) {
+    return { error: 'Solo un cittadino autenticato, attivo e verificato può modificare la propria segnalazione.' };
+  }
+  const segnalazioneId = String(formData.get('segnalazioneId') ?? '').trim();
+  const nuovaDescrizione = String(formData.get('descrizione') ?? '').trim();
+  const expectedRevision = Number(formData.get('expectedRevision'));
+  if (!segnalazioneId || !nuovaDescrizione || !Number.isInteger(expectedRevision) || expectedRevision < 1) {
+    return { error: 'Identificativo, descrizione e revisione corrente sono obbligatori.' };
+  }
+  try {
+    await modificaSegnalazione({ autoreId: user.id, segnalazioneId, expectedRevision, nuovaDescrizione });
+    for (const path of ['/dashboard', '/segnalazioni', `/segnalazioni/${segnalazioneId}`, '/mappa', '/classifica', '/dossier', '/comitato']) revalidatePath(path);
+    return { success: true };
+  } catch (error) {
+    if (error instanceof ConcurrencyConflictError || error instanceof ForbiddenError || error instanceof NotFoundError || error instanceof ValidationError) return { error: error.message };
+    return { error: 'Modifica non riuscita. Riprova dopo aver ricaricato la segnalazione.' };
+  }
+}
 
 export async function sostieniSegnalazioneAction(segnalazioneId: string) {
   const user = await getCurrentUser();

@@ -171,9 +171,13 @@ Riproduzione dei cinque casi, separati nel report JSON di
 | Suite `ia-pipeline.test.ts` non caricata | `@prisma/client did not initialize yet`, `default.js:43` → `src/lib/db.ts:14` | Import `pipeline.ts:2` → `db.ts` → costruzione del client non generato. La suite si ferma prima delle asserzioni. Riprodotta da sola. |
 | Suite `submit-segnalazione-luogo.test.ts` non caricata | Stesso errore, `default.js:43` → `src/lib/db.ts:14` | Import della action upload → `src/lib/domain/uploads.ts:4` → DB; il mock parziale delle segnalazioni non isola questo import. Riprodotta da sola. |
 
-Queste sono le cause dei fallimenti osservati; non è ancora verificato che
-siano gli unici problemi: serve la run con generazione reale per confermare la
-riuscita di ciascun caso e scoprire eventuali ulteriori errori.
+La successiva [run CI 43827655325](https://github.com/JohnCarloG/la-nostra-citta-webapp/actions/runs/43827655325)
+sul commit `5d9419fa4a5696db4c9fae77ee574655d084d5a0` ha completato la
+generazione reale e superato la suite completa, senza test pending. I tre file
+di test originari e il servizio dossier non sono stati modificati rispetto a
+`9c0780e`. I cinque casi quindi passano con il client generato: questo conferma
+le cause sopra riprodotte, senza aggiungere stub o saltare asserzioni. Anche
+typecheck e build di produzione sono passati su quel medesimo SHA.
 
 | Comando locale sul contenuto aggiornato | Esito osservato |
 | --- | --- |
@@ -208,11 +212,31 @@ le versioni, i risultati dei singoli step, i conteggi e i casi falliti nel riepi
 pubblico della run, e conserva log/JSON come artifact legato allo SHA.
 
 Pagina: [Actions del repository](https://github.com/JohnCarloG/la-nostra-citta-webapp/actions/workflows/moderazione-cloud-offline.yml).
-**Workflow preparato per la pubblicazione sul branch; controlli CI non ancora
-confermati in questo documento.** Una run va attribuita allo SHA esatto: il push
-e la pubblicazione del workflow non significano che i controlli siano superati.
-`gh api` in questo ambiente risponde `Forbidden`; se la run non è leggibile,
-l’esito resta esplicitamente non verificato.
+**Workflow pubblicato e controlli CI verificati**, separatamente dagli errori
+locali riportati sopra. `gh api` risponde `Forbidden`, ma le pagine pubbliche
+GitHub hanno consentito di leggere la run del commit corretto e i metadati di
+ogni step. Run documentata:
+[43827655325](https://github.com/JohnCarloG/la-nostra-citta-webapp/actions/runs/43827655325),
+SHA `5d9419fa4a5696db4c9fae77ee574655d084d5a0`, job `133165207201`, stato
+finale **Success**.
+
+| Comando nello stesso job Linux | Esito letto nella run |
+| --- | --- |
+| `npm ci` | Success |
+| `npx --no-install prisma generate` e verifica reale di `Prisma.sql`/`PrismaClient`, senza connessione DB | Success |
+| `npm run test:unit -- --reporter=json --outputFile=verification/unit.json` | Success |
+| `npm run typecheck` | Success |
+| `npm run lint` | Success |
+| `npm run build` | Success |
+| Riepilogo con guardia `numPendingTests === 0` | Success |
+
+Lo stato è stato letto dopo il completamento, non dedotto dal push. I log e il
+report completo sono conservati nell’artifact
+`offline-verification-5d9419fa4a5696db4c9fae77ee574655d084d5a0`; il download dei
+log/artifact richiede accesso GitHub. Non viene riportato un conteggio CI esatto
+non leggibile dalla pagina pubblica. I conteggi della tabella locale non sono
+conteggi del runner CI. Ogni successivo push, inclusi aggiornamenti documentali,
+riesegue tutti i controlli: associare sempre l’esito alla run dello SHA scelto.
 
 **Inferenza cloud reale non eseguita.** Nessuna chiave reale, fatturazione,
 trasmissione di testi/foto a Gemini, merge su main o deploy in questo collaudo.

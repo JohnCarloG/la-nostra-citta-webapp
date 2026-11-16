@@ -118,6 +118,14 @@ fatturazione, pubblicazione di foto, avvio di worker o deploy.
 - Solo tutti i controlli superati e tutti gli allegati coerenti e pubblicabili:
   `APPROVATA`. Restano valide le normali regole pubbliche: mai contenuti ritirati.
 
+RF08 è eseguito anche nel percorso cloud: il worker classifica l’intera descrizione
+contro il catalogo attivo e salva suggerimenti separati (`AnalisiIa` CLASSIFICAZIONE,
+`SuggerimentoCategoria`), senza modificare le categorie confermate. Gli ID estranei
+sono scartati e le categorie ricontrollate al commit; errori del solo classificatore
+sono registrati e non causano rifiuto. Nel dettaglio autorizzato autore e comitato
+vedono le proposte della revisione corrente, marcate «da confermare».
+Per il percorso completo RF07–RF10 e le prove, vedere [GAP_MATRIX.md](GAP_MATRIX.md).
+
 I file provengono solo dal manifest privato della segnalazione letto per quella
 revisione. Si verificano appartenenza, stato READY, dimensione e SHA-256. Ogni
 immagine è decodificata e ricodificata localmente con Sharp senza copiare
@@ -138,10 +146,11 @@ e nel dettaglio autorizzato; la coda del comitato include gli eventi di moderazi
 `npm run worker:moderation` elabora l’Outbox per entrambi gli eventi
 `SEGNALAZIONE_CREATA` e `SEGNALAZIONE_MODIFICATA`; `-- --once` esegue un solo ciclo.
 Lettura dell’ambiente prima degli import del DB, claim con `FOR UPDATE SKIP LOCKED`,
-lease di cinque minuti, normalmente al massimo sei chiamate sequenziali da
+lease di cinque minuti, normalmente al massimo sette chiamate sequenziali (testo, cinque immagini e classificazione) da
 20 secondi. Un limite complessivo di 150 secondi mantiene contabilizzati anche
 eventuali manifest precedenti oltre i cinque allegati: alla scadenza ogni
 allegato ancora da verificare è marcato non valutato e richiede revisione.
+La classificazione può aggiungere fino a 20 secondi al termine dei controlli media, restando entro la lease di cinque minuti.
 Nessuna chiamata al provider dentro una transazione DB. Il worker rispetta
 SIGTERM/SIGINT e non stampa testo, byte o errori grezzi del provider.
 Gli errori di provider gestiti dalla pipeline passano al comitato e completano

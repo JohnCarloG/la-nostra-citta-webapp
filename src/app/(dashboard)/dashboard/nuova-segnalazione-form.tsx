@@ -191,7 +191,7 @@ export default function NuovaSegnalazioneForm() {
         </h2>
         <p className="text-xs text-[var(--success-text)]">
           La tua segnalazione è stata registrata con codice identificativo: <strong className="font-mono">{successId}</strong>.
-          È ora nella coda di verifica del comitato di garanzia. Una volta verificata, sarà pubblicata e aperta al sostegno dei residenti.
+          La pubblicazione è bloccata in attesa dei controlli automatici. L’esito arriverà dopo l’elaborazione: approvazione, rifiuto motivato oppure revisione del comitato in caso di dubbi. Puoi seguirlo nella tua area personale.
         </p>
         <div className="flex items-center gap-3 mt-2">
           <a href={`/segnalazioni/${successId}`} className="btn btn-primary btn-sm">

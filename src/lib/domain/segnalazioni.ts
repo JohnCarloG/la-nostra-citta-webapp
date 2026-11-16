@@ -539,6 +539,11 @@ export async function getDettaglioSegnalazione(
       autore: { select: { id: true, nome: true, cognome: true } },
       media: { orderBy: [{ creato_il: 'asc' }, { id: 'asc' }] },
       categorie: { include: { categoria: true } },
+      analisi_ia: {
+        where: { modulo: 'CLASSIFICAZIONE', stato_esecuzione: 'SUCCEEDED' },
+        orderBy: [{ revisione: 'desc' }, { creata_il: 'desc' }], take: 1,
+        include: { suggerimenti: { where: { categoria: { attiva: true } }, include: { categoria: true } } }
+      },
       sostegni: {
         where: {
           utente: {
@@ -578,6 +583,10 @@ export async function getDettaglioSegnalazione(
 
   return {
     ...segnalazione,
+    suggerimentiIa: (utenteId === segnalazione.autore_id || utenteRuolo === 'COMITATO')
+      ? (segnalazione.analisi_ia ?? []).filter(a => a.revisione === segnalazione.revisione && a.esito !== 'SKIPPED_HUMAN_OVERRIDE')
+        .flatMap(a => a.suggerimenti.map(s => ({ id: s.categoria.id, nome: s.categoria.nome })))
+      : [],
     media: numberedReadyMedia(segnalazione.media),
     totaleSostegniValidi: segnalazione.sostegni.length,
     utenteHaSostenuto,

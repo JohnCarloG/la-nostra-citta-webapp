@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 import { getStorageProvider } from '../storage';
-import { GeminiClient, CLOUD_POLICY_VERSION } from './gemini';
+import { GeminiClient, CLOUD_POLICY_VERSION, CLOUD_CLASSIFICATION_VERSION, type CloudClassification } from './gemini';
 import { evaluateCloudReport, type CloudReport, type CloudEvaluation } from './cloud-evaluation';
 import type { PipelineExecutionResult } from './pipeline';
 
@@ -26,11 +26,23 @@ export async function eseguiAnalisiCloud(id: string, revision: number, timeoutMs
   const inputHash = fingerprint(report);
   let evaluation: CloudEvaluation;
   let model = 'configuration-error';
+  let classification: CloudClassification | undefined;
+  let classificationError = 'Classificatore non disponibile: verificare configurazione o ripetere la classificazione.';
+  let classificationHash = inputHash;
   try {
     const client = new GeminiClient();
     model = client.model;
     const storage = getStorageProvider();
     evaluation = await evaluateCloudReport(report, key => storage.getObject(key), client, timeoutMs);
+    // Independent module: a classifier failure never changes the moderation verdict.
+    try {
+      const categories = await prisma.categoria.findMany({
+        where: { attiva: true }, select: { id: true, codice: true, nome: true }, orderBy: { id: 'asc' }
+      });
+      classificationHash = crypto.createHash('sha256').update(JSON.stringify({ inputHash, categories })).digest('hex');
+      classification = await client.classify(report.descrizione, categories, Math.max(1, Math.min(timeoutMs ?? 20_000, 20_000)));
+      if (!classification.categoryIds.length) classificationError = 'Nessuna categoria attiva riconosciuta: verificare manualmente la classificazione.';
+    } catch { /* Safe fixed diagnostic above; no provider prose or user data. */ }
   } catch {
     // Configuration/storage initialization errors are not user violations. Do not log raw errors or secrets.
     model = 'configuration-error';
@@ -71,10 +83,37 @@ export async function eseguiAnalisiCloud(id: string, revision: number, timeoutMs
         versione_modello: model, versione_policy: CLOUD_POLICY_VERSION
       } }, create: entry, update: {}
     });
+    // Recheck the catalog at commit time: deactivated/deleted categories cannot become suggestions.
+    const activeCategories = classification ? await tx.categoria.findMany({
+      where: { attiva: true, id: { in: classification.categoryIds } }, select: { id: true }
+    }) : [];
+    const activeIds = new Set(activeCategories.map(c => c.id));
+    const categoryIds = (classification?.categoryIds ?? []).filter(id => activeIds.has(id));
+    const classState = obsolete ? 'OBSOLETE' : categoryIds.length ? 'SUCCEEDED' : 'FAILED';
+    const classData = {
+      segnalazione_id: id, revisione: revision, modulo: 'CLASSIFICAZIONE' as const,
+      input_hash: classificationHash, versione_modello: model, versione_policy: CLOUD_CLASSIFICATION_VERSION,
+      stato_esecuzione: classState as 'OBSOLETE' | 'SUCCEEDED' | 'FAILED',
+      esito: obsolete ? 'OBSOLETE' : skip ? 'SKIPPED_HUMAN_OVERRIDE' : `${categoryIds.length}_SUGGERIMENTI`,
+      dettagli_json: JSON.stringify({ execution, categoryIds, discardedIds: classification?.discardedIds ?? 0,
+        inactiveIds: (classification?.categoryIds.length ?? 0) - categoryIds.length,
+        reason: categoryIds.length ? 'Suggerimenti IA da confermare; categorie confermate invariate.' : classificationError }),
+      completata_il: new Date()
+    };
+    const classRecord = await tx.analisiIa.upsert({
+      where: { chiave_idempotenza: {
+        segnalazione_id: id, revisione: revision, modulo: 'CLASSIFICAZIONE', input_hash: classificationHash,
+        versione_modello: model, versione_policy: CLOUD_CLASSIFICATION_VERSION
+      } }, create: classData, update: {}
+    });
     if (obsolete || skip) return {
       segnalazioneId: id, revisione: revision, status: execution as 'OBSOLETE' | 'SKIPPED_HUMAN_OVERRIDE',
       finalState: current.stato_moderazione
     };
+    for (const categoryId of categoryIds) await tx.suggerimentoCategoria.upsert({
+      where: { analisi_id_categoria_id: { analisi_id: classRecord.id, categoria_id: categoryId } },
+      create: { analisi_id: classRecord.id, categoria_id: categoryId }, update: {}
+    });
     await tx.segnalazione.update({ where: { id }, data: { stato_moderazione: evaluation.state } });
     await tx.eventoStato.create({ data: {
       segnalazione_id: id, tipo_attore: 'SISTEMA', ambito: 'MODERAZIONE', da_stato: 'PENDENTE',

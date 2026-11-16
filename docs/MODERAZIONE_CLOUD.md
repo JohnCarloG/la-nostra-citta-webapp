@@ -13,36 +13,94 @@ Il payload usa `systemInstruction`, `contents[].parts`, immagini PNG in
 validati anche localmente. Il modello non scrive motivazioni libere nel registro
 o nell’interfaccia: il codice genera motivazioni brevi in italiano senza citazioni.
 
-`GEMINI_MODEL` è **obbligatorio**, senza default. L’ID precedentemente tratto dal
-cookbook non è stato confermato nel catalogo ufficiale e non è raccomandato.
-Gli esempi del cookbook e il convertitore dell’SDK documentano il contratto
-`generateContent`/`responseJsonSchema`, ma non provano disponibilità o capacità
-di un particolare ID. I test usano esclusivamente l’ID fittizio
-`offline-test-model` e un trasporto HTTP simulato.
+### Capacità documentate e raccomandazione per il prototipo
 
-Fonti ufficiali consultate senza chiamare modelli:
+Modello consigliato: **`gemini-3.5-flash`**, indicato come **stabile** nella
+scheda Google fornita dall’utente. È una raccomandazione di configurazione per
+il prototipo, non un default: `GEMINI_MODEL` resta **obbligatorio**, senza valore
+predefinito nel codice. La raccomandazione non attiva il servizio.
+
+**Provenienza delle evidenze:** le fonti Google elencate nella tabella seguente
+sono state fornite dall’utente come verificate in questa sessione. L’agente non
+le ha consultate direttamente: l’accesso alla documentazione Google dal suo
+ambiente era bloccato da HTTP 403. Le capacità sono riportate sulla base di
+quelle evidenze, distinguendone l’ambito e i limiti.
+
+| Capacità richiesta | Fonte ufficiale fornita | Evidenza e limite |
+| --- | --- | --- |
+| ID esatto e stato | [Scheda Gemini 3.5 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash) | ID `gemini-3.5-flash`, modello stabile secondo la scheda verificata dall’utente. Non prova l’abilitazione del nostro account. |
+| Testo e immagini in input | [Scheda Gemini 3.5 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash) | Input testuali e visivi documentati; non dimostra l’accuratezza delle valutazioni di coerenza o pubblicabilità. |
+| API `generateContent` | [Guida Google per Gemini 3.5 Flash](https://ai.google.dev/gemini-api/docs/generate-content/whats-new-gemini-3.5) | La guida mostra l’uso con `generateContent`; nessuna chiamata al modello è stata eseguita in questo progetto. |
+| Output JSON strutturato | [Scheda Gemini 3.5 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash) | Supporto agli output strutturati documentato. Il nostro specifico `responseJsonSchema`, con enum, campi obbligatori e `additionalProperties: false`, è verificato solo con trasporto simulato: l’accettazione effettiva da parte del provider resta da collaudare. |
+| Italiano | [Documentazione Google Cloud sulle lingue dei modelli Google](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/google-models) | Include l’italiano per le risposte testuali della famiglia Gemini. È un’indicazione di famiglia, non una certificazione specifica dell’accuratezza di `gemini-3.5-flash` nella moderazione civica italiana o dell’accesso tramite il nostro account Gemini API. |
+
+Fonti tecniche ufficiali consultate dall’agente nelle verifiche precedenti,
+senza chiamare modelli:
 
 - [Google Gemini cookbook: generateContent](https://github.com/google-gemini/cookbook/blob/6c416d766328d125774e21f282e59dfdf12049c9/quickstarts/Get_started_Generate_Content.ipynb)
 - [Google Gemini cookbook: JSON REST](https://github.com/google-gemini/cookbook/blob/6c416d766328d125774e21f282e59dfdf12049c9/quickstarts/rest/JSON_mode_REST.ipynb)
 - [Google SDK: convertitori REST](https://github.com/googleapis/js-genai/blob/main/src/converters/_models_converters.ts)
 - [Google API: GenerateContent e GenerationConfig](https://github.com/googleapis/googleapis/blob/master/google/ai/generativelanguage/v1beta/generative_service.proto)
 
-**Documentazione del modello non verificata**: le richieste senza chiavi a
-`ai.google.dev` restituiscono HTTP 403. Per l’ID richiesto `gemini-4-hydrogen`
-non sono quindi confermati: presenza nel catalogo, disponibilità tramite
-`generateContent`, italiano, input immagini e JSON strutturato. Questo non
-dimostra che l’ID sia inesistente; impedisce di raccomandarlo.
+Queste ultime fonti documentano il contratto generale
+`generateContent`/`responseJsonSchema`; un esempio nel cookbook, da solo, non
+prova la disponibilità di un modello. I test usano esclusivamente l’ID fittizio
+`offline-test-model` e un trasporto HTTP simulato.
 
-Prima di scegliere un valore di `GEMINI_MODEL`, verificare nelle fonti Google
-[modelli](https://ai.google.dev/gemini-api/docs/models),
-[structured outputs](https://ai.google.dev/gemini-api/docs/structured-output),
-[image understanding](https://ai.google.dev/gemini-api/docs/image-understanding)
-e [riferimento generateContent](https://ai.google.dev/api/generate-content).
+### Test offline superati
+
+Le verifiche offline della pipeline e del worker sono descritte nelle sezioni
+Collaudo offline e Runner CI Linux: includono payload, decisioni deterministiche,
+protezione dei media e delle revisioni, oltre a suite unitaria completa,
+typecheck, lint e build superati in CI. Provano il contratto applicativo con
+risposte simulate, non l’accettazione live dello schema o le capacità semantiche
+del modello consigliato.
+
+### Disponibilità per l’account e qualità reale ancora da verificare
+
+Restano da accertare per il nostro account: accesso all’ID consigliato tramite
+Gemini API, autorizzazioni, quote e accettazione dell’intero schema JSON. Restano
+inoltre da misurare qualità della moderazione in italiano, falsi positivi,
+falsi negativi, valutazione delle immagini e resistenza alle istruzioni ostili
+nei contenuti. La documentazione pubblica non sostituisce queste prove.
+
 Non è stata effettuata alcuna interrogazione autenticata del catalogo o del
 modello. Un valore mancante/composto da soli spazi blocca il preflight del worker
 con un messaggio esplicito su `GEMINI_MODEL`, prima degli import del DB e dei job.
 Anche l’avvio supervisionato richiede la configurazione; nessun default presunto.
 La pipeline resta conservativa se la configurazione manca o il provider fallisce.
+
+## Piano di collaudo futuro con dati sintetici — non eseguito
+
+Il piano seguente richiede un’attivazione futura esplicita dell’operatore e non
+è stato eseguito. Preparare descrizioni inventate e immagini create per il test,
+senza persone, luoghi privati o dati reali. Per il caso privacy, usare un documento
+di scena con dati interamente fittizi, ad esempio un indirizzo di contatto su
+`example.invalid`. Tutti gli allegati restano privati: verificare gli esiti in
+un ambiente di collaudo isolato senza pubblicarli.
+
+| Caso sintetico | Esito atteso | Esempio di motivazione visibile |
+| --- | --- | --- |
+| Segnalazione valida: descrizione di rifiuti alimentari sul marciapiede, con foto sintetica coerente, leggibile e pubblicabile | `APPROVATA` | Autore: «Testo pertinente e conforme; tutti gli allegati coerenti e idonei alla pubblicazione.» |
+| Critica severa ma civile alla gestione comunale della pulizia, con allegato pertinente e pubblicabile | `APPROVATA` | Autore: «Testo pertinente e conforme; tutti gli allegati coerenti e idonei alla pubblicazione.» La severità della critica non è una violazione. |
+| Ricetta pubblicata come tale, estranea a un problema o a una proposta civica | `RIFIUTATA` | Autore: «Testo: contenuto estraneo a problemi o proposte civiche.» Distinguere questo caso dai rifiuti alimentari in strada. |
+| Descrizione di un marciapiede dissestato e foto sintetica di un piatto cucinato, chiaramente incompatibile | `RIFIUTATA` | Autore: «Allegato 1: immagine chiaramente incompatibile con la descrizione.» Nessuna accusa di frode. |
+| Foto coerente con la segnalazione, ma con dati privati leggibili di una terza persona fittizia in un documento di scena | `RIFIUTATA` | Autore: «Allegato 1: diffusione di dati personali altrui.» Non ripetere i dati, nemmeno quelli sintetici, nella motivazione. |
+| Foto ambigua che non consente di confermare il racconto, senza incompatibilità o violazioni certe | `IN_REVISIONE` | Comitato: «Allegato 1: verificare il collegamento con la descrizione; l’immagine non conferma da sola il racconto.» |
+| Errore tecnico simulato nel controllo di un allegato, senza altre violazioni certe | `IN_REVISIONE` | Comitato: «Allegato 1: ripetere il controllo automatico non disponibile; nessuna violazione accertata.» Non imputare l’errore all’autore. |
+| Due allegati: il primo dubbio, il secondo coerente ma certamente non pubblicabile per dati privati leggibili di scena | `RIFIUTATA` | Autore: «Allegato 2: diffusione di dati personali altrui.» La violazione certa del secondo prevale sul dubbio del primo; il registro conserva entrambi gli esiti. |
+
+In una futura prova reale, usare l’ID raccomandato solo dopo la decisione esplicita
+dell’operatore e verificarne disponibilità per l’account e compatibilità del
+payload completo prima di giudicare la qualità delle risposte. Per ogni fixture
+registrare separatamente verdetti di pertinenza, community, coerenza e
+pubblicabilità, decisione deterministica, motivo mostrato, modello, revisione e
+versione delle regole. Confrontare con gli esiti attesi della tabella; una
+risposta formalmente valida ma semanticamente errata non è un test superato.
+
+Il caso di errore tecnico resta riproducibile tramite trasporto simulato e non
+richiede una chiamata reale. Nessuno di questi esempi autorizza oggi inferenze,
+fatturazione, pubblicazione di foto, avvio di worker o deploy.
 
 ## Regole deterministiche (`civic-gemini-v1`)
 

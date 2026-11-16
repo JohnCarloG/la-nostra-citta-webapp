@@ -66,6 +66,7 @@ test('cittadino → worker reale con solo HTTP Gemini simulato → comitato → 
     await visitor.goto('/segnalazioni'); await expect(visitor.locator('main')).toContainText('Segnalazione civica sintetica');
     await visitor.goto('/mappa'); await expect(visitor.locator('main')).toContainText('45.4701, 9.2012');
     await expect(visitor.locator('iframe')).toHaveAttribute('src', /marker=45\.4701%2C9\.2012/);
+    await expect(visitor.frameLocator('iframe').locator('.leaflet-marker-icon')).toBeVisible({ timeout: 30_000 });
     await screenshot(visitor, '02-mappa-posizione-corretta');
     evidence.push({ action: 'GPS corretto e approvazione automatica', expected: 'Posizione scelta pubblica dopo APPROVATA', observed: 'Coordinate 45.4701, 9.2012 visibili e marker coerente; dettaglio e media pubblici', evidence: '02-mappa-posizione-corretta.png' });
     for (const page of [citizen, committee]) {

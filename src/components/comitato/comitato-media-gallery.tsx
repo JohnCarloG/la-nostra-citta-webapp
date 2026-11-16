@@ -8,6 +8,7 @@ export interface ComitatoMediaItem {
   byte_size: number;
   mime: string;
   durata_secondi?: number | null;
+  numeroAllegato?: number;
 }
 
 export interface ComitatoMediaGalleryProps {
@@ -89,6 +90,7 @@ export default function ComitatoMediaGallery({
       {/* Griglia foto: 2 colonne dedicate quando le foto sono due */}
       <div className={gridClass}>
         {media.map((m, idx) => {
+          const number = m.numeroAllegato ?? idx + 1;
           const isFailed = !!failedMedia[m.id];
           const sizeKb = (m.byte_size / 1024).toFixed(0);
 
@@ -115,7 +117,7 @@ export default function ComitatoMediaGallery({
                     controls
                     preload="metadata"
                     className="w-full h-full object-contain"
-                    aria-label={`Video prova allegato #${idx + 1}`}
+                    aria-label={`Video prova allegato #${number}`}
                   >
                     Il tuo browser non supporta la riproduzione video HTML5.
                   </video>
@@ -136,7 +138,7 @@ export default function ComitatoMediaGallery({
             >
               <div className="flex items-center justify-between gap-1 mb-1.5">
                 <span className="badge badge-categoria font-semibold text-[0.625rem]">
-                  Foto #{idx + 1}
+                  Foto #{number}
                 </span>
                 <span className="text-[0.625rem] text-[var(--text-muted)] font-mono">
                   {sizeKb} KB
@@ -173,7 +175,7 @@ export default function ComitatoMediaGallery({
                   onClick={() => setSelectedMedia(m)}
                   className="group relative w-full h-32 bg-white rounded border border-[var(--border-light)] overflow-hidden flex items-center justify-center p-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--blue-primary)] cursor-pointer"
                   aria-haspopup="dialog"
-                  aria-label={`Ingrandisci foto documentale #${idx + 1} (${sizeKb} KB)`}
+                  aria-label={`Ingrandisci foto documentale #${number} (${sizeKb} KB)`}
                 >
                   {/* Visualizzazione integrale con proporzioni preservate (object-contain, nessuna foto tagliata) */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}

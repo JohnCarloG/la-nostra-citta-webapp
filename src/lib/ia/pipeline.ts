@@ -54,9 +54,14 @@ export async function eseguiAnalisiSegnalazione(
   segnalazioneId: string,
   revisione: number,
   customAdapters?: Partial<PipelineAdapters>,
-  options?: { timeoutMs?: number; adapterMode?: 'real' | 'mock' | 'ollama'; allowSimulatedApproval?: boolean }
+  options?: { timeoutMs?: number; adapterMode?: 'real' | 'mock' | 'ollama' | 'cloud'; allowSimulatedApproval?: boolean }
 ): Promise<PipelineExecutionResult> {
   const mode = options?.adapterMode ?? process.env.AI_ADAPTER_MODE ?? 'mock';
+  if (mode === 'cloud') {
+    if (customAdapters && Object.keys(customAdapters).length) throw new Error('Cloud: adapter sostitutivi non consentiti');
+    const { eseguiAnalisiCloud } = await import('./cloud-pipeline');
+    return eseguiAnalisiCloud(segnalazioneId, revisione, options?.timeoutMs);
+  }
   if (!['real', 'mock', 'ollama'].includes(mode)) throw new Error('Modalità IA non valida');
   const local = mode === 'ollama';
   const isRealMode = local || mode === 'real';

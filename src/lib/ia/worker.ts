@@ -74,7 +74,7 @@ export async function processSingleOutboxJob(
   options?: {
     timeoutMs?: number;
     maxRetries?: number;
-    adapterMode?: 'real' | 'mock' | 'ollama';
+    adapterMode?: 'real' | 'mock' | 'ollama' | 'cloud';
   }
 ): Promise<ProcessJobResult> {
   const maxRetries = options?.maxRetries ?? MAX_WORKER_RETRIES;
@@ -133,7 +133,10 @@ export async function processSingleOutboxJob(
     }
 
     // Se si è verificato un errore imprevisto o la pipeline ha restituito FAILED
-    const errMessage = processingError?.message || executionResult?.reason || 'Errore elaborazione job';
+    const cloudMode = (options?.adapterMode ?? process.env.AI_ADAPTER_MODE) === 'cloud';
+    const errMessage = cloudMode
+      ? 'Errore tecnico: verificare disponibilità del database e ripetere i controlli di testo e allegati. Nessuna violazione accertata.'
+      : processingError?.message || executionResult?.reason || 'Errore elaborazione job';
 
     if (job.tentativi >= maxRetries) {
       // Esauriti i tentativi: applicazione della policy conservativa (05 riga 30)
@@ -144,7 +147,11 @@ export async function processSingleOutboxJob(
         FOR UPDATE
       `;
 
-      if (segRows.length > 0 && segRows[0].stato_moderazione === 'PENDENTE' && segRows[0].revisione === job.revisione) {
+      const humanDecision = cloudMode ? await tx.eventoStato.findFirst({
+        where: { segnalazione_id: job.segnalazione_id, revisione: job.revisione, ambito: 'MODERAZIONE', tipo_attore: 'UTENTE', a_stato: { not: 'PENDENTE' } },
+        select: { id: true }
+      }) : null;
+      if (!humanDecision && segRows.length > 0 && segRows[0].stato_moderazione === 'PENDENTE' && segRows[0].revisione === job.revisione) {
         await tx.segnalazione.update({
           where: { id: job.segnalazione_id },
           data: {

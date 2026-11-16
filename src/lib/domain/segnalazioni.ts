@@ -1,6 +1,7 @@
 import { prisma } from '../db';
 import { ConcurrencyConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { Prisma, StatoModerazione, StatoAvanzamento } from '@prisma/client';
+import { numberedReadyMedia } from './media-order';
 
 /**
  * Policy di visibilità unificata per tutti i percorsi pubblici (VI06):
@@ -536,7 +537,7 @@ export async function getDettaglioSegnalazione(
     where: { id },
     include: {
       autore: { select: { id: true, nome: true, cognome: true } },
-      media: { where: { stato_file: 'READY' } },
+      media: { orderBy: [{ creato_il: 'asc' }, { id: 'asc' }] },
       categorie: { include: { categoria: true } },
       sostegni: {
         where: {
@@ -577,6 +578,7 @@ export async function getDettaglioSegnalazione(
 
   return {
     ...segnalazione,
+    media: numberedReadyMedia(segnalazione.media),
     totaleSostegniValidi: segnalazione.sostegni.length,
     utenteHaSostenuto,
     isPubblica: pubblica
@@ -998,18 +1000,19 @@ export async function aggiornaCategorieSegnalazione(params: {
  * Operazione rigorosamente in sola lettura (non scrive sul catalogo categorie).
  */
 export async function getCodaRevisioniComitato() {
-  return prisma.segnalazione.findMany({
+  const reports = await prisma.segnalazione.findMany({
     where: {
       stato_moderazione: { in: ['PENDENTE', 'IN_REVISIONE'] }
     },
     include: {
       autore: { select: { id: true, nome: true, cognome: true, email_normalizzata: true } },
-      media: { where: { stato_file: 'READY' } },
+      media: { orderBy: [{ creato_il: 'asc' }, { id: 'asc' }] },
       categorie: { include: { categoria: true } },
       eventi_stato: { orderBy: { creato_il: 'desc' }, take: 3 }
     },
     orderBy: { creata_il: 'asc' }
   });
+  return reports.map(report => ({ ...report, media: numberedReadyMedia(report.media) }));
 }
 
 /**
@@ -1026,16 +1029,17 @@ export async function getTutteSegnalazioniComitato(filtroStato?: string) {
     }
   }
 
-  return prisma.segnalazione.findMany({
+  const reports = await prisma.segnalazione.findMany({
     where: whereClause,
     include: {
       autore: { select: { id: true, nome: true, cognome: true, email_normalizzata: true } },
-      media: { where: { stato_file: 'READY' } },
+      media: { orderBy: [{ creato_il: 'asc' }, { id: 'asc' }] },
       categorie: { include: { categoria: true } },
       eventi_stato: { orderBy: { creato_il: 'desc' } }
     },
     orderBy: { creata_il: 'desc' }
   });
+  return reports.map(report => ({ ...report, media: numberedReadyMedia(report.media) }));
 }
 
 /**

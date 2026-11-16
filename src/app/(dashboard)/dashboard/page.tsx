@@ -48,6 +48,7 @@ export default async function DashboardPage() {
       _count: {
         select: { sostegni: true }
       };
+      eventi_stato: true;
     }
   }>;
 
@@ -58,6 +59,7 @@ export default async function DashboardPage() {
       where: { autore_id: user.id },
       orderBy: { creata_il: 'desc' },
       include: {
+        eventi_stato: { where: { ambito: 'MODERAZIONE' }, orderBy: [{ creato_il: 'desc' }, { id: 'desc' }], take: 1 },
         categorie: {
           include: { categoria: true }
         },
@@ -159,6 +161,12 @@ export default async function DashboardPage() {
                       {seg.descrizione}
                     </Link>
                   </h3>
+
+                  {seg.eventi_stato[0]?.revisione === seg.revisione && seg.stato_moderazione !== 'PENDENTE' && (
+                    <p className="text-sm text-[var(--text-secondary)] mt-2">
+                      {seg.eventi_stato[0].motivazione}
+                    </p>
+                  )}
 
                   <div className="flex items-center gap-3 text-xs text-[var(--text-muted)] mt-1.5">
                     <span>Inserita il {new Date(seg.creata_il).toLocaleDateString('it-IT')}</span>

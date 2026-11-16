@@ -144,6 +144,16 @@ npm run worker:email
 npm run worker:email:test -- --job-id <id> --send
 ```
 
+### 6.3 Moderazione Cloud Gemini
+
+La modalità esplicita `AI_ADAPTER_MODE=cloud` collega la pipeline all'API ufficiale
+Gemini `generateContent`, senza fallback verso Ollama o mock. Il worker
+`npm run worker:moderation` elabora segnalazioni nuove e modificate.
+Per regole, stato del collaudo offline e configurazione futura di web e worker
+su Render, leggere [Moderazione cloud](docs/MODERAZIONE_CLOUD.md).
+Il collaudo cloud reale e la verifica completa del modello restano da eseguire;
+nessuna attivazione o pubblicazione è implicita nell'implementazione.
+
 ---
 
 ## 7. Funzionamento dello Storage Locale Privato e Limitazioni

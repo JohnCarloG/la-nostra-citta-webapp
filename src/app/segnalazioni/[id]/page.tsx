@@ -200,7 +200,7 @@ export default async function SegnalazioneDetailPage({ params }: PageProps) {
                     <ReportThumbnail
                       mediaId={m.id}
                       tipo="FOTO"
-                      alt="Allegato segnalazione documentato dal cittadino"
+                      alt={`Allegato ${m.numeroAllegato} della segnalazione`}
                       className="relative w-full h-48 bg-transparent overflow-hidden rounded-[var(--radius-xs)] flex items-center justify-center"
                       imgClassName="max-h-48 w-auto object-contain rounded-[var(--radius-xs)]"
                     />
@@ -212,7 +212,7 @@ export default async function SegnalazioneDetailPage({ params }: PageProps) {
                     </div>
                   )}
                   <span className="text-[0.6875rem] text-[var(--text-muted)] mt-1.5 text-center">
-                    {m.tipo} &bull; {(m.byte_size / 1024).toFixed(0)} KB &bull; Accesso protetto
+                    Allegato {m.numeroAllegato}: {m.tipo} &bull; {(m.byte_size / 1024).toFixed(0)} KB &bull; Accesso protetto
                   </span>
                 </div>
               ))}

@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
-import { GeminiClient, CLOUD_SYSTEM_INSTRUCTION, DEFAULT_GEMINI_MODEL, type TextAssessment, type ImageAssessment } from '../../src/lib/ia/gemini';
+import { GeminiClient, CLOUD_SYSTEM_INSTRUCTION, validateCloudWorkerConfiguration, type TextAssessment, type ImageAssessment } from '../../src/lib/ia/gemini';
 import { evaluateCloudReport, stripPrivateImageMetadata, type CloudReport, type CloudMedia } from '../../src/lib/ia/cloud-evaluation';
 import { numberedReadyMedia } from '../../src/lib/domain/media-order';
 
@@ -25,10 +25,18 @@ async function fixture(count = 1) {
 function transport(outputs: unknown[]) {
   const http = vi.fn<typeof fetch>();
   for (const output of outputs) http.mockResolvedValueOnce(reply(output));
-  return { http, client: new GeminiClient({ apiKey: 'offline-test-key', fetch: http }) };
+  return { http, client: new GeminiClient({ apiKey: 'offline-test-key', model: 'offline-test-model', fetch: http }) };
 }
 
 describe('Gemini cloud: contratto HTTP simulato, nessuna richiesta reale', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it.each(['', '   '])('il preflight segnala GEMINI_MODEL obbligatorio senza avviare worker o rete: %j', model => {
+    vi.stubEnv('AI_ADAPTER_MODE', 'cloud');
+    vi.stubEnv('GEMINI_MODEL', model);
+    vi.stubEnv('GEMINI_API_KEY', '');
+    expect(() => validateCloudWorkerConfiguration()).toThrow('GEMINI_MODEL è obbligatorio');
+    expect(() => new GeminiClient()).toThrow('GEMINI_MODEL è obbligatorio');
+  });
   it('usa generateContent ufficiale, chiave in header, schema JSON e solo pixel senza EXIF/GPS', async () => {
     const f = await fixture();
     const { http, client } = transport([safeText, safeImage]);
@@ -36,7 +44,7 @@ describe('Gemini cloud: contratto HTTP simulato, nessuna richiesta reale', () =>
     expect(result.state).toBe('APPROVATA');
     expect(http).toHaveBeenCalledTimes(2);
     const [url, options] = http.mock.calls[1];
-    expect(url).toBe(`https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_GEMINI_MODEL}:generateContent`);
+    expect(url).toBe(`https://generativelanguage.googleapis.com/v1beta/models/offline-test-model:generateContent`);
     expect(options?.method).toBe('POST');
     expect(options?.redirect).toBe('error');
     expect(options?.signal).toBeInstanceOf(AbortSignal);
@@ -184,7 +192,7 @@ describe('Gemini cloud: contratto HTTP simulato, nessuna richiesta reale', () =>
 
   it('il modello è configurabile ma non può trasformarsi in un URL arbitrario', () => {
     expect(new GeminiClient({ model: 'gemini-configured' }).model).toBe('gemini-configured');
-    expect(() => new GeminiClient({ model: '../other?key=leak' })).toThrow('INVALID_MODEL');
+    expect(() => new GeminiClient({ model: '../other?key=leak' })).toThrow('GEMINI_MODEL deve contenere un ID');
   });
 
   it('rifiuta un buffer danneggiato prima dell’invio', async () => {

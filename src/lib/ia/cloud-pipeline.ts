@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 import { getStorageProvider } from '../storage';
-import { GeminiClient, CLOUD_POLICY_VERSION, DEFAULT_GEMINI_MODEL } from './gemini';
+import { GeminiClient, CLOUD_POLICY_VERSION } from './gemini';
 import { evaluateCloudReport, type CloudReport, type CloudEvaluation } from './cloud-evaluation';
 import type { PipelineExecutionResult } from './pipeline';
 
@@ -25,7 +25,7 @@ export async function eseguiAnalisiCloud(id: string, revision: number, timeoutMs
   };
   const inputHash = fingerprint(report);
   let evaluation: CloudEvaluation;
-  let model = DEFAULT_GEMINI_MODEL;
+  let model = 'configuration-error';
   try {
     const client = new GeminiClient();
     model = client.model;

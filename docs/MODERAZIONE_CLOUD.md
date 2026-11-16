@@ -13,11 +13,12 @@ Il payload usa `systemInstruction`, `contents[].parts`, immagini PNG in
 validati anche localmente. Il modello non scrive motivazioni libere nel registro
 o nell’interfaccia: il codice genera motivazioni brevi in italiano senza citazioni.
 
-Il default configurabile è `gemini-4-hydrogen`, modello indicato dal cookbook
-ufficiale consultato al commit `6c416d766328d125774e21f282e59dfdf12049c9`.
-Gli esempi ufficiali mostrano input immagine e output strutturati con
-`generateContent`; il convertitore dell’SDK ufficiale conferma il campo REST
-`responseJsonSchema`.
+`GEMINI_MODEL` è **obbligatorio**, senza default. L’ID precedentemente tratto dal
+cookbook non è stato confermato nel catalogo ufficiale e non è raccomandato.
+Gli esempi del cookbook e il convertitore dell’SDK documentano il contratto
+`generateContent`/`responseJsonSchema`, ma non provano disponibilità o capacità
+di un particolare ID. I test usano esclusivamente l’ID fittizio
+`offline-test-model` e un trasporto HTTP simulato.
 
 Fonti ufficiali consultate senza chiamare modelli:
 
@@ -26,15 +27,22 @@ Fonti ufficiali consultate senza chiamare modelli:
 - [Google SDK: convertitori REST](https://github.com/googleapis/js-genai/blob/main/src/converters/_models_converters.ts)
 - [Google API: GenerateContent e GenerationConfig](https://github.com/googleapis/googleapis/blob/master/google/ai/generativelanguage/v1beta/generative_service.proto)
 
-**Verifica ancora necessaria prima dell’attivazione**: `ai.google.dev` è bloccato
-da HTTP 403 in questo ambiente. Non è stata completata la verifica nella guida
-del supporto dell’italiano e della disponibilità corrente del modello per
-l’account scelto. Ricontrollare [modelli](https://ai.google.dev/gemini-api/docs/models),
+**Documentazione del modello non verificata**: le richieste senza chiavi a
+`ai.google.dev` restituiscono HTTP 403. Per l’ID richiesto `gemini-4-hydrogen`
+non sono quindi confermati: presenza nel catalogo, disponibilità tramite
+`generateContent`, italiano, input immagini e JSON strutturato. Questo non
+dimostra che l’ID sia inesistente; impedisce di raccomandarlo.
+
+Prima di scegliere un valore di `GEMINI_MODEL`, verificare nelle fonti Google
+[modelli](https://ai.google.dev/gemini-api/docs/models),
 [structured outputs](https://ai.google.dev/gemini-api/docs/structured-output),
 [image understanding](https://ai.google.dev/gemini-api/docs/image-understanding)
 e [riferimento generateContent](https://ai.google.dev/api/generate-content).
-Il modello resta sostituibile tramite `GEMINI_MODEL`; un modello non valido o
-non disponibile produce revisione, mai approvazione simulata.
+Non è stata effettuata alcuna interrogazione autenticata del catalogo o del
+modello. Un valore mancante/composto da soli spazi blocca il preflight del worker
+con un messaggio esplicito su `GEMINI_MODEL`, prima degli import del DB e dei job.
+Anche l’avvio supervisionato richiede la configurazione; nessun default presunto.
+La pipeline resta conservativa se la configurazione manca o il provider fallisce.
 
 ## Regole deterministiche (`civic-gemini-v1`)
 
@@ -103,7 +111,8 @@ Configurazione del singolo servizio:
    Web e worker partono con la stessa directory di lavoro tramite lo script.
    Una sola istanza del servizio finché si usa storage locale.
 4. Variabili server: `NODE_ENV=production`, `AI_ADAPTER_MODE=cloud`,
-   `GEMINI_MODEL=gemini-4-hydrogen` (da riconfermare), `GEMINI_API_KEY` inserita
+   `GEMINI_MODEL` con un ID esatto prima verificato nel catalogo Google (obbligatorio,
+   nessun valore suggerito), `GEMINI_API_KEY` inserita
    come segreto, `DATABASE_URL` MySQL con TLS verificato e CA corretta,
    `APP_URL` con il dominio reale. Render fornisce `PORT`.
    Non distribuire `.env.local` di sviluppo né credenziali nel repository.
@@ -135,24 +144,75 @@ Separare sempre: **integrazione implementata**, **contratto verificato offline**
 di unit test completi, typecheck, lint e build; non equiparare i nuovi test passati
 alla riuscita dei controlli bloccati dalla generazione Prisma.
 
-Esito di questa sessione:
+## Verifiche locali e diagnosi separata
 
-| Comando | Risultato |
+Prisma CLI e client sono entrambi **5.22.0**, come fissati nel lockfile. Sono
+stati usati i binari installati (`npx --no-install prisma generate`), senza
+aggiornare dipendenze o cambiare versione. La generazione fallisce su:
+
+```
+Failed to fetch sha256 checksum at https://binaries.prisma.sh/all_commits/605197351a3c8bdd595af2d2a9bc3025bca48ea2/debian-openssl-3.0.x/libquery_engine.so.node.gz.sha256 - 403 Forbidden
+```
+
+Il controllo diretto del pacchetto installato restituisce `typeof Prisma.sql ===
+"undefined"`; `new PrismaClient()` solleva l’errore di inizializzazione. Il file
+`node_modules/.prisma/client/default.js` è il placeholder fornito dal pacchetto,
+non uno stub aggiunto per il collaudo. Nessuna sostituzione è stata applicata.
+Non sono stati disabilitati checksum, TLS, test o controlli TypeScript.
+
+Riproduzione dei cinque casi, separati nel report JSON di
+`npx --no-install vitest run tests/unit/dossier.test.ts tests/unit/ia-pipeline.test.ts tests/unit/submit-segnalazione-luogo.test.ts --reporter=json`:
+
+| Caso | Primo errore utile | Causa riscontrata localmente |
+| --- | --- | --- |
+| `dossier.test.ts` → `applica le regole di visibilità pubblica (APPROVATA e NON RITIRATA) e spareggio coerente con la classifica` | `Prisma.sql is not a function`, `src/lib/domain/dossier.ts:109` | Costruzione della query prima di chiamare `$queryRaw`: l’export SQL manca nel client non generato; il mock DB del test non è ancora invocato. |
+| `dossier.test.ts` → `restituisce lista vuota senza errori se non ci sono segnalazioni per i filtri specificati` | `Prisma.sql is not a function`, stessa riga 109 | La costruzione SQL precede anche il caso della lista vuota; non è un errore del filtro o della risposta DB. |
+| `dossier.test.ts` → `restituisce status 200 con Content-Type text/csv e Content-Disposition corretti` | Log `Prisma.sql is not a function` in `dossier.ts:109`, poi `expected 503 to be 200` | La route chiama il servizio a `route.ts:37`; il catch trasforma quell’eccezione in HTTP 503. Riprodotto anche isolando questo test, con stack del log. |
+| Suite `ia-pipeline.test.ts` non caricata | `@prisma/client did not initialize yet`, `default.js:43` → `src/lib/db.ts:14` | Import `pipeline.ts:2` → `db.ts` → costruzione del client non generato. La suite si ferma prima delle asserzioni. Riprodotta da sola. |
+| Suite `submit-segnalazione-luogo.test.ts` non caricata | Stesso errore, `default.js:43` → `src/lib/db.ts:14` | Import della action upload → `src/lib/domain/uploads.ts:4` → DB; il mock parziale delle segnalazioni non isola questo import. Riprodotta da sola. |
+
+Queste sono le cause dei fallimenti osservati; non è ancora verificato che
+siano gli unici problemi: serve la run con generazione reale per confermare la
+riuscita di ciascun caso e scoprire eventuali ulteriori errori.
+
+| Comando locale sul contenuto aggiornato | Esito osservato |
 | --- | --- |
+| `npx --no-install prisma generate` | Fallito: HTTP 403 sopra riportato |
+| Tre suite cloud offline | 60 test superati |
+| `npm run test:unit` | 331 superati, 3 falliti, 2 suite non caricate; nessun test disabilitato nella suite completa |
+| `npm run typecheck` | Fallito: mancano tipi/enum del client generato; prima segnalazione `scripts/seed-demo-data.ts:188`, TS7006 |
 | `npm run lint` | Superato |
-| Nuove suite cloud (incluse nella suite completa) | 53 test superati |
-| `npm run test:unit` | 324 superati, 3 falliti; 2 ulteriori suite non caricate |
-| `npm run typecheck` | Fallito: client Prisma non generato, tipi del dominio mancanti |
-| `npm run build` | Bundling riuscito; fallito al controllo TypeScript per gli stessi tipi Prisma mancanti |
-| `npx prisma generate` (anche `--no-engine`) | Bloccato: HTTP 403 scaricando i checksum dei motori da `binaries.prisma.sh` |
-| Lettura `https://ai.google.dev/gemini-api/docs/models` | HTTP 403 |
+| `npm run build` | Bundling riuscito; fallisce al controllo TypeScript, prima segnalazione TS7006 sopra indicata |
 
-I tre test falliti sono in `dossier.test.ts` (`Prisma.sql is not a function`);
-le due suite non caricate sono `ia-pipeline.test.ts` e
-`submit-segnalazione-luogo.test.ts` (`@prisma/client did not initialize yet`).
-Questi errori erano già presenti nel collaudo precedente alla modifica.
-Non sono stati trovati motori Prisma utilizzabili nelle directory locali
-ispezionate. Non sono state disabilitate verifiche di checksum o TLS.
-Dopo aver consentito i domini, eseguire `npx prisma generate` e ripetere
-unit test, typecheck e build; completare poi la verifica documentale del modello.
-Nessun collaudo cloud reale è stato eseguito.
+Il nuovo test al **confine del worker** esegue claim, HTTP simulato, decisione,
+registrazione e finalizzazione del job. Con due allegati, il primo ambiguo e il
+secondo con violazione certa, verifica `RIFIUTATA` e la motivazione italiana
+servita dal dettaglio autorizzato all’autore; un altro utente non può leggerla.
+Copre anche soli dubbi, errori tecnici, tutti i controlli favorevoli e revisione
+obsoleta con decisione umana concorrente: nessuna scrittura di stato o evento
+in quest’ultimo caso. Non avvia processi worker, migrazioni o inferenze reali.
+
+## Runner CI Linux
+
+Workflow: [moderazione-cloud-offline.yml](../.github/workflows/moderazione-cloud-offline.yml).
+Parte al push su `feat/moderazione-cloud`, usa Ubuntu 24.04 e Node 24 con
+`permissions: contents: read`. Non legge segreti applicativi e non dispone di un
+database reale: gli URL fittizi puntano a `127.0.0.1:1`. Non avvia web, worker,
+migrazioni o test live.
+
+Esegue nell’ordine `npm ci`, `npx --no-install prisma generate`, suite unitaria
+completa, typecheck, lint e build. Dopo l’installazione, tutti i controlli sono
+comunque tentati anche se un controllo precedente fallisce. La shell Bash
+mantiene `pipefail`: `tee` non nasconde gli exit code. Il workflow registra lo SHA,
+le versioni, i risultati dei singoli step, i conteggi e i casi falliti nel riepilogo
+pubblico della run, e conserva log/JSON come artifact legato allo SHA.
+
+Pagina: [Actions del repository](https://github.com/JohnCarloG/la-nostra-citta-webapp/actions/workflows/moderazione-cloud-offline.yml).
+**Workflow preparato per la pubblicazione sul branch; controlli CI non ancora
+confermati in questo documento.** Una run va attribuita allo SHA esatto: il push
+e la pubblicazione del workflow non significano che i controlli siano superati.
+`gh api` in questo ambiente risponde `Forbidden`; se la run non è leggibile,
+l’esito resta esplicitamente non verificato.
+
+**Inferenza cloud reale non eseguita.** Nessuna chiave reale, fatturazione,
+trasmissione di testi/foto a Gemini, merge su main o deploy in questo collaudo.

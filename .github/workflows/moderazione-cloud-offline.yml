@@ -1,0 +1,86 @@
+name: Moderazione cloud - verifica offline
+
+on:
+  push:
+    branches: [feat/moderazione-cloud]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Deliberately unreachable local address; no secrets or real database.
+      DATABASE_URL: mysql://offline:offline@127.0.0.1:1/offline?connect_timeout=1
+      TEST_DATABASE_URL: mysql://offline:offline@127.0.0.1:1/la_nostra_citta_test?connect_timeout=1
+      NEXT_TELEMETRY_DISABLED: '1'
+      AI_ADAPTER_MODE: mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: mkdir -p verification
+      - name: Install locked dependencies
+        id: install
+        run: npm ci 2>&1 | tee verification/install.log
+      - name: Generate real Prisma client (locked CLI)
+        id: generate
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          node -p 'JSON.stringify({commit:process.env.GITHUB_SHA,prisma:require("./package-lock.json").packages["node_modules/prisma"].version,client:require("./package-lock.json").packages["node_modules/@prisma/client"].version})' | tee verification/versions.log
+          npx --no-install prisma generate 2>&1 | tee verification/generate.log
+          node -e 'const {Prisma,PrismaClient}=require("@prisma/client"); if(typeof Prisma.sql!=="function")process.exit(1); const c=new PrismaClient(); console.log("Real Prisma.sql and PrismaClient available; no connection made"); c.$disconnect()' | tee verification/prisma-runtime.log
+      - name: Complete unit suite (no skipped tests)
+        id: unit
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run test:unit -- --reporter=json --outputFile=verification/unit.json 2>&1 | tee verification/unit.log
+      - name: Typecheck
+        id: typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run typecheck 2>&1 | tee verification/typecheck.log
+      - name: Lint
+        id: lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run lint 2>&1 | tee verification/lint.log
+      - name: Production build
+        id: build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run build 2>&1 | tee verification/build.log
+      - name: Publish verification summary
+        if: ${{ !cancelled() }}
+        env:
+          GENERATE_OUTCOME: ${{ steps.generate.outcome }}
+          UNIT_OUTCOME: ${{ steps.unit.outcome }}
+          TYPECHECK_OUTCOME: ${{ steps.typecheck.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const lines = [`Commit: ${process.env.GITHUB_SHA}`, '', '| Check | Outcome |', '| --- | --- |'];
+          for (const name of ['GENERATE', 'UNIT', 'TYPECHECK', 'LINT', 'BUILD']) lines.push(`| ${name} | ${process.env[name + '_OUTCOME']} |`);
+          if (fs.existsSync('verification/unit.json')) {
+            const r = JSON.parse(fs.readFileSync('verification/unit.json', 'utf8'));
+            lines.push('', `Unit: ${r.numPassedTests} passed; ${r.numFailedTests} failed; ${r.numPendingTests} pending; ${r.numTotalTests} total.`);
+            for (const suite of r.testResults) {
+              if (suite.status === 'failed') lines.push(`- Failed suite: ${suite.name}`);
+              for (const test of suite.assertionResults) if (test.status !== 'passed') lines.push(`- ${test.status}: ${test.fullName}`);
+            }
+            if (r.numPendingTests) process.exitCode = 1;
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          NODE
+      - name: Preserve evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-verification-${{ github.sha }}
+          path: verification/

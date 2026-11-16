@@ -10,10 +10,13 @@ vi.mock('../../src/lib/db', () => ({ prisma: mocks.db }));
 vi.mock('../../src/lib/storage', () => ({ getStorageProvider: () => mocks.storage }));
 import { eseguiAnalisiSegnalazione } from '../../src/lib/ia/pipeline';
 import { processSingleOutboxJob } from '../../src/lib/ia/worker';
-import { CLOUD_POLICY_VERSION, DEFAULT_GEMINI_MODEL } from '../../src/lib/ia/gemini';
+import { CLOUD_POLICY_VERSION } from '../../src/lib/ia/gemini';
+import { getDettaglioSegnalazione } from '../../src/lib/domain/segnalazioni';
 
 type Report = {
-  id: string; revisione: number; descrizione: string; stato_moderazione: string; stato_avanzamento: string;
+  id: string; autore_id: string; revisione: number; descrizione: string; stato_moderazione: string; stato_avanzamento: string;
+  sostegni: Array<{ utente_id: string }>;
+  eventi_stato: Array<{ revisione: number; motivazione: string }>;
   media: Array<{ id: string; segnalazione_id: string; storage_key: string; sha256: string; byte_size: number; tipo: string; mime: string; stato_file: string }>;
 };
 const safeText = { relevance: { verdict: 'PASS', reason: 'CIVIC' }, community: { verdict: 'PASS', reason: 'SAFE' } };
@@ -34,12 +37,13 @@ describe('Pipeline e worker cloud: storage/DB/HTTP offline', () => {
   beforeEach(async () => {
     vi.resetAllMocks();
     vi.stubEnv('GEMINI_API_KEY', 'offline-dummy-key');
-    vi.stubEnv('GEMINI_MODEL', DEFAULT_GEMINI_MODEL);
+    vi.stubEnv('GEMINI_MODEL', 'offline-test-model');
     human = null;
     duringProvider = () => {};
     const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: 'white' } }).png().toBuffer();
     current = {
-      id: 'report', revisione: 1, descrizione: 'Manca illuminazione pubblica.', stato_moderazione: 'PENDENTE', stato_avanzamento: 'RICEVUTA',
+      id: 'report', autore_id: 'author', revisione: 1, descrizione: 'Manca illuminazione pubblica.', stato_moderazione: 'PENDENTE', stato_avanzamento: 'RICEVUTA',
+      sostegni: [], eventi_stato: [],
       media: [{ id: 'media', segnalazione_id: 'report', storage_key: 'private-object', sha256: crypto.createHash('sha256').update(bytes).digest('hex'), byte_size: bytes.length, tipo: 'FOTO', mime: 'image/png', stato_file: 'READY' }]
     };
     mocks.storage.getObject.mockResolvedValue(bytes);
@@ -48,6 +52,8 @@ describe('Pipeline e worker cloud: storage/DB/HTTP offline', () => {
     tx.$queryRaw.mockImplementation(async () => [structuredClone(current)]);
     tx.segnalazione.findUnique.mockImplementation(async () => structuredClone(current));
     tx.eventoStato.findFirst.mockImplementation(async () => human);
+    tx.segnalazione.update.mockImplementation(async ({ data }) => { current.stato_moderazione = data.stato_moderazione; return structuredClone(current); });
+    tx.eventoStato.create.mockImplementation(async ({ data }) => { current.eventi_stato.push(data); return data; });
     http = vi.fn<typeof fetch>().mockImplementation(async (_url, options) => {
       duringProvider();
       const body = JSON.parse(String(options?.body));
@@ -63,8 +69,8 @@ describe('Pipeline e worker cloud: storage/DB/HTTP offline', () => {
     expect(http).toHaveBeenCalledTimes(2);
     expect(tx.segnalazione.update).toHaveBeenCalledWith({ where: { id: 'report' }, data: { stato_moderazione: 'APPROVATA' } });
     const entry = tx.analisiIa.upsert.mock.calls[0][0].create;
-    expect(entry).toMatchObject({ revisione: 1, esito: 'APPROVATA', versione_modello: DEFAULT_GEMINI_MODEL, versione_policy: CLOUD_POLICY_VERSION });
-    expect(JSON.parse(entry.dettagli_json)).toMatchObject({ revision: 1, state: 'APPROVATA', model: DEFAULT_GEMINI_MODEL, policy: CLOUD_POLICY_VERSION });
+    expect(entry).toMatchObject({ revisione: 1, esito: 'APPROVATA', versione_modello: 'offline-test-model', versione_policy: CLOUD_POLICY_VERSION });
+    expect(JSON.parse(entry.dettagli_json)).toMatchObject({ revision: 1, state: 'APPROVATA', model: 'offline-test-model', policy: CLOUD_POLICY_VERSION });
     expect(entry.dettagli_json).not.toContain('private-object');
     expect(tx.eventoStato.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ revisione: 1, a_stato: 'APPROVATA', tipo_attore: 'SISTEMA' }) }));
     expect(tx.auditEvento.create).toHaveBeenCalledTimes(1);
@@ -153,6 +159,50 @@ describe('Pipeline e worker cloud: storage/DB/HTTP offline', () => {
     const sql = tx.$queryRaw.mock.calls[0][0].join('');
     expect(sql).toContain('FOR UPDATE SKIP LOCKED');
     expect(sql).toContain("'SEGNALAZIONE_CREATA', 'SEGNALAZIONE_MODIFICATA'");
+  });
+
+  it.each(['violation-and-doubt', 'doubt', 'technical-error', 'all-pass', 'obsolete-and-human'])('confine worker: %s, stato e motivo accessibili all’autore', async scenario => {
+    const second = { ...current.media[0], id: 'second', storage_key: 'private-second' };
+    current.media.push(second);
+    tx.$queryRaw.mockImplementation(async (query: TemplateStringsArray) => query.join('').includes('FROM Outbox')
+      ? [{ id: 'job', segnalazione_id: 'report', revisione: 1, tipo_evento: 'SEGNALAZIONE_MODIFICATA', payload_json: '{}', tentativi: 0 }]
+      : [structuredClone(current)]);
+    http.mockImplementation(async (_url, options) => {
+      const payload = JSON.parse(String(options?.body));
+      const input = JSON.parse(payload.contents[0].parts[0].text);
+      if (scenario === 'obsolete-and-human') {
+        current.revisione = 2;
+        current.stato_moderazione = 'RIFIUTATA';
+        human = { id: 'human' };
+      }
+      if (scenario === 'technical-error') return new Response('untrusted-private-error', { status: 503 });
+      if (input.task === 'TEXT') return response(safeText);
+      if (scenario === 'violation-and-doubt' && input.attachment === 2) return response({ ...safeImage, publication: { verdict: 'FAIL', reason: 'PERSONAL_DATA' } });
+      if (scenario === 'doubt' || scenario === 'violation-and-doubt') return response({ ...safeImage, coherence: 'UNCERTAIN' });
+      return response(safeImage);
+    });
+    const result = await processSingleOutboxJob(undefined, { adapterMode: 'cloud' });
+    expect(result.outcome).toBe('SUCCESS');
+    if (scenario === 'obsolete-and-human') {
+      expect(result.details).toMatchObject({ status: 'OBSOLETE' });
+      expect(tx.segnalazione.update).not.toHaveBeenCalled();
+      expect(tx.eventoStato.create).not.toHaveBeenCalled();
+      expect(current.stato_moderazione).toBe('RIFIUTATA');
+      return;
+    }
+    const state = scenario === 'all-pass' ? 'APPROVATA' : scenario === 'violation-and-doubt' ? 'RIFIUTATA' : 'IN_REVISIONE';
+    expect(result.details).toMatchObject({ finalState: state });
+    expect(current.stato_moderazione).toBe(state);
+    const detail = await getDettaglioSegnalazione('report', 'author');
+    expect(detail?.eventi_stato[0].motivazione).toBe(current.eventi_stato[0].motivazione);
+    if (scenario === 'violation-and-doubt') {
+      expect(detail?.eventi_stato[0].motivazione).toBe('Allegato 2: diffusione di dati personali altrui.');
+      expect(await getDettaglioSegnalazione('report', 'unrelated-user')).toBeNull();
+    }
+    if (scenario === 'technical-error') expect(detail?.eventi_stato[0].motivazione).toContain('nessuna violazione accertata');
+    if (scenario === 'doubt') expect(detail?.eventi_stato[0].motivazione).toContain('verificare il collegamento');
+    expect(tx.eventoStato.create).toHaveBeenCalledTimes(1);
+    expect(tx.outbox.update).toHaveBeenCalledTimes(1);
   });
 
   it.each([false, true])('worker: errore infrastrutturale finale sanificato; preserva decisioni umane=%s', async humanExists => {

@@ -27,8 +27,8 @@ export function supervise(children, completed, graceMs = 10_000) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.env.AI_ADAPTER_MODE !== 'cloud' || !process.env.GEMINI_API_KEY) {
-    console.error('Configurare AI_ADAPTER_MODE=cloud e GEMINI_API_KEY lato server prima dell’avvio.');
+  if (process.env.AI_ADAPTER_MODE !== 'cloud' || !process.env.GEMINI_API_KEY || !process.env.GEMINI_MODEL?.trim()) {
+    console.error('Configurare AI_ADAPTER_MODE=cloud, GEMINI_MODEL (obbligatorio, nessun default) e GEMINI_API_KEY lato server prima dell’avvio.');
     process.exitCode = 1;
   } else {
     const root = fileURLToPath(new URL('..', import.meta.url));

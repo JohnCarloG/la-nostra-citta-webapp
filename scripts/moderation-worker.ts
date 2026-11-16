@@ -1,12 +1,10 @@
 import { loadAppEnv } from '../src/lib/env-loader';
+import { CloudConfigurationError, validateCloudWorkerConfiguration } from '../src/lib/ia/gemini';
 
 async function main() {
   // Load before importing the DB/pipeline (static imports execute before loadAppEnv).
   loadAppEnv();
-  if (process.env.AI_ADAPTER_MODE !== 'cloud') throw new Error('Il worker cloud richiede AI_ADAPTER_MODE=cloud');
-  if (!process.env.GEMINI_API_KEY) throw new Error('Configurare GEMINI_API_KEY solo lato server');
-  const { GeminiClient } = await import('../src/lib/ia/gemini');
-  new GeminiClient(); // Validate model configuration before claiming any jobs.
+  validateCloudWorkerConfiguration(); // Fail explicitly before DB imports or claiming any jobs.
   const { processSingleOutboxJob } = await import('../src/lib/ia/worker');
   const { prisma } = await import('../src/lib/db');
   let running = true;
@@ -28,7 +26,7 @@ async function main() {
   }
 }
 
-main().catch(() => {
-  console.error('Worker cloud interrotto: verificare configurazione e disponibilità del database.');
+main().catch(error => {
+  console.error(error instanceof CloudConfigurationError ? error.message : 'Worker cloud interrotto: verificare configurazione e disponibilità del database.');
   process.exitCode = 1;
 });

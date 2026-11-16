@@ -6,6 +6,7 @@ import SostegnoButton from '@/components/sostegno-button';
 import RitiraButton from '@/components/ritira-button';
 import MediaPlaceholder from '@/components/media-placeholder';
 import ReportThumbnail from '@/components/report-thumbnail';
+import ModificaSegnalazioneForm from '@/components/modifica-segnalazione-form';
 import ComitatoActionsForm from '@/app/(dashboard)/comitato/comitato-actions-form';
 
 interface PageProps {
@@ -73,6 +74,9 @@ export default async function SegnalazioneDetailPage({ params }: PageProps) {
       )}
 
       {/* Sezione Riservata al Comitato di Garanzia (Supervisione e Avanzamento) */}
+      {isAutore && seg.stato_avanzamento === 'RICEVUTA' && (
+        <ModificaSegnalazioneForm id={seg.id} revisione={seg.revisione} descrizione={seg.descrizione} />
+      )}
       {(isAutore || isComitato) && seg.suggerimentiIa.length > 0 && (
         <section className="panel" aria-label="Categorie suggerite dall’IA">
           <h2 className="section-title text-base">Categorie suggerite dall’IA — da confermare</h2>

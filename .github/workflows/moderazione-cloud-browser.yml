@@ -1,0 +1,66 @@
+name: Moderazione cloud - browser e MySQL isolato
+
+on:
+  push:
+    branches: [feat/moderazione-cloud]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: browser-local-only
+          MYSQL_ROOT_HOST: '%'
+          MYSQL_DATABASE: la_nostra_citta_browser
+        ports:
+          - 3310:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost --password=browser-local-only"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      DATABASE_URL: mysql://root:browser-local-only@127.0.0.1:3310/la_nostra_citta_browser?connect_timeout=5&pool_timeout=5
+      NEXT_TELEMETRY_DISABLED: '1'
+      AI_ADAPTER_MODE: cloud
+      GEMINI_MODEL: offline-test-model
+      GEMINI_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx --no-install prisma generate
+      - name: Prepare empty temporary database and synthetic fixtures
+        run: |
+          npx --no-install tsx -e 'import {assertIsolatedBrowserDatabase} from "./tests/browser/isolated-database"; assertIsolatedBrowserDatabase()'
+          npx --no-install prisma migrate deploy
+          npx --no-install tsx tests/browser/seed.ts
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run build
+      - name: Real application browser journey
+        id: journey
+        run: npx --no-install playwright test
+      - name: Browser evidence summary
+        if: ${{ !cancelled() }}
+        env:
+          JOURNEY_OUTCOME: ${{ steps.journey.outcome }}
+        run: node tests/browser/report.mjs
+      - name: Screenshots, observations, report and worker trace
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-evidence-${{ github.sha }}
+          path: browser-evidence/

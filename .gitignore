@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/browser-evidence/
 
 # next.js
 /.next/

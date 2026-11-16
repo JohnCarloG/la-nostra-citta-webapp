@@ -66,7 +66,15 @@ test('cittadino → worker reale con solo HTTP Gemini simulato → comitato → 
     await visitor.goto('/segnalazioni'); await expect(visitor.locator('main')).toContainText('Segnalazione civica sintetica');
     await visitor.goto('/mappa'); await expect(visitor.locator('main')).toContainText('45.4701, 9.2012');
     await expect(visitor.locator('iframe')).toHaveAttribute('src', /marker=45\.4701%2C9\.2012/);
-    await expect(visitor.frameLocator('iframe').locator('.leaflet-marker-icon')).toBeVisible({ timeout: 30_000 });
+    try {
+      await expect(visitor.frameLocator('iframe').locator('.leaflet-marker-icon')).toBeVisible({ timeout: 30_000 });
+    } catch (error) {
+      const frame = visitor.frames().find(frame => frame.url().includes('openstreetmap.org/export/embed'));
+      const diagnostic = { url: frame?.url(), title: await frame?.title().catch(() => 'unavailable'),
+        body: await frame?.locator('body').innerText({ timeout: 3000 }).catch(() => 'unavailable') };
+      await fs.writeFile('browser-evidence/map-diagnostic.json', JSON.stringify(diagnostic, null, 2));
+      throw new Error(`Public map marker not verified. Frame diagnostic: ${JSON.stringify(diagnostic).slice(0, 2000)}. ${String(error).slice(0, 500)}`);
+    }
     await screenshot(visitor, '02-mappa-posizione-corretta');
     evidence.push({ action: 'GPS corretto e approvazione automatica', expected: 'Posizione scelta pubblica dopo APPROVATA', observed: 'Coordinate 45.4701, 9.2012 visibili e marker coerente; dettaglio e media pubblici', evidence: '02-mappa-posizione-corretta.png' });
     for (const page of [citizen, committee]) {
